@@ -1,0 +1,42 @@
+@import './tokens.css';
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-display); }
+button { font-family: inherit; }
+a { color: inherit; }
+
+.phone-canvas {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (min-width: 520px) {
+  body { background: #04070d; }
+  .phone-canvas {
+    margin: 24px auto;
+    min-height: calc(100vh - 48px);
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(34,211,238,0.05);
+    overflow: hidden;
+  }
+}
+
+.touch-target { min-height: 44px; min-width: 44px; }
+
+.scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* neon glow */
+.glow-green { box-shadow: 0 0 20px rgba(52,211,153,0.4); }
+.glow-red { box-shadow: 0 0 20px rgba(248,113,113,0.4); }
+.glow-cyan { box-shadow: 0 0 20px rgba(34,211,238,0.3); }
