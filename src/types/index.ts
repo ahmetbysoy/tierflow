@@ -41,14 +41,4 @@ export interface Signal {
   ts: number
 }
 
-export interface Metrics {
-  cvd: number
-  cvdNorm: number
-  cvdZ: number
-  obi: number
-  obiRaw: number
-  velocity: number
-  velocityZ: number
-  score: number
-  price: number
-}
+export interface Metrics { cvd: number; cvdNorm: number; cvdZ: number; obi: number; obiRaw: number; velocity: number; velocityZ: number; score: number; price: number }
