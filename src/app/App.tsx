@@ -33,6 +33,18 @@ export default function App() {
     // Reconnect when source/symbol changes - create new manager
   }, [source, symbol])
 
+  // Expose for Playwright debug
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // @ts-ignore
+      window.__DATASTORE__ = useDataStore
+      // @ts-ignore
+      window.__SETTINGS__ = useSettingsStore
+      // @ts-ignore
+      import('../store/dataStore').then(m => { /* @ts-ignore */ window.__INTERNAL__ = m._internal })
+    }
+  }, [])
+
   // Audio/haptic on signal
   useEffect(() => {
     const handler = (e: Event) => {

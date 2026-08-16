@@ -1,11 +1,12 @@
 /**
- * Signal Filters - canlı takip debug sonrası patchler (v3 dengeli)
- * - Yatay piyasa filtresi: fiyat range < %0.03 ise sinyal baskıla (0.08->0.03 gevşetildi, screenshot %0.00016 hala blok)
- * - OBI confluence: |OBI| < 0.06 ise baskıla (0.08->0.06)
- * - 2/3 onay: en az 2 indikatör aynı yönde ve |z|>0.30 (0.4->0.30)
+ * Signal Filters - canlı takip debug sonrası patchler (v4 - 5dk canlı sonrası)
+ * - Yatay piyasa filtresi: fiyat range < %0.02 ise sinyal baskıla (0.03->0.02, 60s pencerede $12.5 BTC)
+ *   screenshot %0.00016 hala blok, ama $15 range (%0.024) artık geçer (önceki 0.03'te bloktu, 5dk'da 0 sinyal veriyordu)
+ * - OBI confluence: |OBI| < 0.06 ise baskıla
+ * - 2/3 onay: en az 2 indikatör aynı yönde ve |z|>0.30
  */
 
-export function isFlatMarket(priceHistory: { price: number; ts: number }[], windowMs = 60000, thresholdPct = 0.03): boolean {
+export function isFlatMarket(priceHistory: { price: number; ts: number }[], windowMs = 60000, thresholdPct = 0.02): boolean {
   if (priceHistory.length < 10) return false
   const now = Date.now()
   const cutoff = now - windowMs
@@ -51,8 +52,8 @@ export function applyFilters(params: {
   velZ: number
   score: number
 }): FilterResult {
-  if (isFlatMarket(params.priceHistory, 60000, 0.03)) {
-    return { pass: false, reason: 'Flat market - range <0.03%' }
+  if (isFlatMarket(params.priceHistory, 60000, 0.02)) {
+    return { pass: false, reason: 'Flat market - range <0.02%' }
   }
   if (!hasOBIConfluence(params.obi, 0.06)) {
     return { pass: false, reason: `OBI too weak |OBI|=${params.obi.toFixed(2)} <0.06` }
