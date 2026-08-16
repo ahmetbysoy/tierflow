@@ -51,7 +51,7 @@ export class SignalEngine {
   private lastScore = 0
   private hasSeenNeutralSinceFired = true // initially true so first signal allowed
 
-  constructor(private config: EngineConfig = { threshold: 0.6, cooldownMs: 15000, hysteresis: 0.3 }) {}
+  constructor(private config: EngineConfig = { threshold: 0.9, cooldownMs: 25000, hysteresis: 0.4 }) {}
 
   updateConfig(cfg: Partial<EngineConfig>) {
     this.config = { ...this.config, ...cfg }
