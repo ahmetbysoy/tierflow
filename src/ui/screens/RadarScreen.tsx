@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useDataStore } from '../../store/dataStore'
+import { useSettingsStore } from '../../store/settingsStore'
 import { RadarGauge } from '../components/RadarGauge'
 import { MeterBar } from '../components/MeterBar'
 import { useConfetti, PulseRing } from '../components/CanvasConfetti'
@@ -9,13 +10,14 @@ export function RadarScreen() {
   const metrics = useDataStore((s) => s.metrics)
   const engineState = useDataStore((s) => s.engineState)
   const signals = useDataStore((s) => s.signals)
+  const threshold = useSettingsStore((s) => s.threshold)
   const lastSignal = signals[0]
   const fire = useConfetti()
   const [pulse, setPulse] = useState(false)
 
   const score = metrics.score
   const confidence = Math.min(100, Math.round((Math.abs(score) / 1.2) * 100))
-  const side: 'BUY' | 'SELL' | 'NEUTRAL' = score > 0.6 ? 'BUY' : score < -0.6 ? 'SELL' : 'NEUTRAL'
+  const side: 'BUY' | 'SELL' | 'NEUTRAL' = score > threshold ? 'BUY' : score < -threshold ? 'SELL' : 'NEUTRAL'
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -79,7 +81,7 @@ export function RadarScreen() {
       </motion.div>
 
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', textAlign: 'center', opacity: 0.7 }}>
-        Skor: {score.toFixed(2)} • Eşik: 0.6 • CVD_z + OBI + V_z kompozit
+        Skor: {score.toFixed(2)} • Eşik: {threshold.toFixed(2)} • CVD_z + OBI + V_z kompozit
       </div>
     </div>
   )

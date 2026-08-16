@@ -4,6 +4,7 @@ import { calcCVDNorm, calcCVDZ, detectDivergence } from '../core/indicators/cvd'
 import { calcOBIRaw, updateOBI } from '../core/indicators/imbalance'
 import { calcVelocity, calcVelocityZ } from '../core/indicators/velocity'
 import { SignalEngine, computeScore, normalizeWeights } from '../core/signal/engine'
+import { applyFilters } from '../core/signal/filters'
 import type { NormalizedTrade, NormalizedDepth, Candle, Signal, Metrics } from '../types'
 
 interface DataState {
@@ -110,15 +111,28 @@ export const useDataStore = create<DataState>((set, get) => ({
     const weights = normalizeWeights(settings.weights || { w1: 0.5, w2: 0.3, w3: 0.2 })
     const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj)
 
+    // Patch: apply microstructure filters (flat, OBI, confluence) - debug live trace sonrası
+    const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
+    const shouldSuppress = !filter.pass
+
     // engine tick - optimized: threshold 0.9, cooldown 25s, hysteresis 0.4
     engine.updateConfig({ threshold: settings.threshold ?? 0.9, cooldownMs: (settings.cooldown ?? 25) * 1000, hysteresis: 0.4 })
-    const res = engine.tick({
+    let res = engine.tick({
       score,
       price: t.price,
       breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ },
       weights,
       ts: t.ts
     })
+    // Suppress signal if filter fails (flat/OBI/confluence) - but keep engine state tracking
+    if (shouldSuppress && res.signal) {
+      // Filtered - don't fire, keep as COOLDOWN/IDLE without signal
+      res = { ...res, signal: null }
+      // Also prevent ARMED -> stay IDLE if filtered
+      if (res.state === 'ARMED' || res.state === 'FIRED') {
+        res.state = 'IDLE' as any
+      }
+    }
 
     const metrics: Metrics = {
       cvd: 0,
@@ -193,8 +207,17 @@ export const useDataStore = create<DataState>((set, get) => ({
     const weights = normalizeWeights(settings.weights || { w1: 0.5, w2: 0.3, w3: 0.2 })
     const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj)
 
+    const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
+    const shouldSuppress = !filter.pass
+
     engine.updateConfig({ threshold: settings.threshold ?? 0.9, cooldownMs: (settings.cooldown ?? 25) * 1000, hysteresis: 0.4 })
-    const res = engine.tick({ score, price, breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ }, weights, ts })
+    let res = engine.tick({ score, price, breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ }, weights, ts })
+    if (shouldSuppress && res.signal) {
+      res = { ...res, signal: null }
+      if (res.state === 'ARMED' || res.state === 'FIRED') {
+        res.state = 'IDLE' as any
+      }
+    }
 
     const metrics: Metrics = {
       cvd: 0,
