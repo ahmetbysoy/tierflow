@@ -1,24 +1,33 @@
 {
   "name": "tierflow",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Whale Vampire - Retail kanını emen orderflow piramidi",
+  "description": "Signal Radar - Neon Kokpit Radarı | CVD + OBI + Velocity",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 4173"
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "zustand": "^4.5.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "zustand": "^4.5.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lightweight-charts": "^4.2.1",
+    "framer-motion": "^11.11.17",
+    "canvas-confetti": "^1.9.4",
+    "lucide-react": "^0.468.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.1",
+    "@types/canvas-confetti": "^1.6.4",
     "@vitejs/plugin-react": "^4.3.3",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.10"
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8",
+    "jsdom": "^25.0.1"
   }
 }

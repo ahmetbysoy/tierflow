@@ -1,0 +1,17 @@
+:root {
+  --bg: #070B14;
+  --surface: #0F1626;
+  --surface-2: #16203A;
+  --border: #1E2A44;
+  --text: #E6EDF7;
+  --muted: #7C8DB0;
+  --green: #34D399;
+  --red: #F87171;
+  --amber: #FBBF24;
+  --cyan: #22D3EE;
+  --violet: #A78BFA;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius: 16px;
+  --radius-sm: 10px;
+}
