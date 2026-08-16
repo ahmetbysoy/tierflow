@@ -6,12 +6,14 @@ export interface Weights {
   w1: number
   w2: number
   w3: number
+  w4?: number
+  w5?: number
 }
 
 export function normalizeWeights(w: Weights): Weights {
-  const sum = w.w1 + w.w2 + w.w3
-  if (sum === 0) return { w1: 1 / 3, w2: 1 / 3, w3: 1 / 3 }
-  return { w1: w.w1 / sum, w2: w.w2 / sum, w3: w.w3 / sum }
+  const sum = (w.w1||0)+(w.w2||0)+(w.w3||0)+(w.w4||0)+(w.w5||0)
+  if (sum === 0) return { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 } as Weights
+  return { w1: (w.w1||0)/sum, w2: (w.w2||0)/sum, w3: (w.w3||0)/sum, w4: (w.w4||0)/sum, w5: (w.w5||0)/sum } as Weights
 }
 
 export function computeScore(
@@ -19,10 +21,12 @@ export function computeScore(
   obi: number,
   velocityZ: number,
   weights: Weights,
-  divergenceAdj = 0
+  divergenceAdj = 0,
+  microDev: number = 0,
+  vpinAdj: number = 0
 ): number {
   const w = normalizeWeights(weights)
-  const s = w.w1 * cvdZ + w.w2 * obi + w.w3 * velocityZ + divergenceAdj
+  const s = (w.w1||0) * cvdZ + (w.w2||0) * obi + (w.w3||0) * velocityZ + (w.w4||0) * microDev + (w.w5||0) * vpinAdj + divergenceAdj
   return Math.max(-3, Math.min(3, s))
 }
 
@@ -60,7 +64,7 @@ export class SignalEngine {
   tick(params: {
     score: number
     price: number
-    breakdown: { cvd: number; obi: number; vel: number }
+    breakdown: { cvd: number; obi: number; vel: number; micro?: number; vpin?: number }
     weights: Weights
     ts: number
   }): EngineTickResult {
@@ -134,7 +138,7 @@ export class SignalEngine {
           price,
           confidence: computeConfidence(score),
           score,
-          breakdown: { cvd: breakdown.cvd, obi: breakdown.obi, vel: breakdown.vel, w1: weights.w1, w2: weights.w2, w3: weights.w3 },
+          breakdown: { cvd: breakdown.cvd, obi: breakdown.obi, vel: breakdown.vel, micro: breakdown.micro, vpin: breakdown.vpin, w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: (weights as any).w4, w5: (weights as any).w5 },
           ts
         }
         this.lastFiredSide = side

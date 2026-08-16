@@ -39,10 +39,15 @@ export function RadarScreen() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }} className="scrollbar-thin">
         <MeterBar label="CVD" value={metrics.cvdZ} displayValue={metrics.cvdZ.toFixed(2)} color="var(--cyan)" />
-        <MeterBar label="IMB" value={metrics.obi} displayValue={metrics.obi.toFixed(2)} color="var(--green)" />
+        <MeterBar label="OBI" value={metrics.obi} displayValue={metrics.obi.toFixed(2)} color="var(--green)" />
         <MeterBar label="VEL" value={metrics.velocityZ} displayValue={metrics.velocityZ.toFixed(2)} color="var(--violet)" />
+        <MeterBar label="MIC" value={metrics.microDev} displayValue={metrics.microDev.toFixed(2)} color="var(--amber)" />
+        <MeterBar label="VPIN" value={metrics.vpin*2 -1} displayValue={metrics.vpin.toFixed(2)} color={metrics.vpinLabel==='Toxic'?'var(--red)':metrics.vpinLabel==='Medium'?'var(--amber)':'var(--green)'} />
+      </div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>
+        MIC microprice sapması (-1..+1) • VPIN {metrics.vpinLabel} {metrics.vpin.toFixed(2)} (Toxic &gt;0.6)
       </div>
 
       <motion.div

@@ -3,15 +3,16 @@ import { SignalEngine, normalizeWeights, computeScore, computeConfidence } from 
 
 describe('Composite Score', () => {
   it('5. Kompozit skor ağırlık normalizasyonu', () => {
-    const w = normalizeWeights({ w1: 2, w2: 1, w3: 1 })
-    expect(w.w1 + w.w2 + w.w3).toBeCloseTo(1, 5)
+    const w = normalizeWeights({ w1: 2, w2: 1, w3: 1 } as any)
+    expect((w.w1||0)+(w.w2||0)+(w.w3||0)+(w.w4||0)+(w.w5||0)).toBeCloseTo(1, 5)
     expect(w.w1).toBeCloseTo(0.5, 5)
-    const score = computeScore(1, 0.5, -0.2, { w1: 2, w2: 1, w3: 1 })
+    const score = computeScore(1, 0.5, -0.2, { w1: 2, w2: 1, w3: 1 } as any)
     // normalized w = 0.5,0.25,0.25 => 0.5*1 +0.25*0.5 +0.25*(-0.2)=0.5+0.125-0.05=0.575
     expect(score).toBeCloseTo(0.575, 5)
 
-    const zeroW = normalizeWeights({ w1: 0, w2: 0, w3: 0 })
-    expect(zeroW.w1).toBeCloseTo(1 / 3, 5)
+    const zeroW = normalizeWeights({ w1: 0, w2: 0, w3: 0 } as any)
+    expect(zeroW.w1).toBeCloseTo(0.35, 5)
+    expect((zeroW as any).w4).toBeCloseTo(0.18, 5)
 
     const conf = computeConfidence(1.2)
     expect(conf).toBe(100)

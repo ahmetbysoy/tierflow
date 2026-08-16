@@ -20,12 +20,12 @@ export function SettingsScreen() {
     setHaptics
   } = useSettingsStore()
 
-  const handleWeight = (k: 'w1' | 'w2' | 'w3', v: number) => {
+  const handleWeight = (k: 'w1' | 'w2' | 'w3' | 'w4' | 'w5', v: number) => {
     const nw = { ...weights, [k]: v }
-    setWeights(nw)
+    setWeights(nw as any)
   }
 
-  const total = weights.w1 + weights.w2 + weights.w3
+  const total = weights.w1 + weights.w2 + weights.w3 + weights.w4 + weights.w5
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, padding: 16, overflow: 'auto' }} className="scrollbar-thin">
@@ -82,15 +82,16 @@ export function SettingsScreen() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}>İNDİKATÖR AĞIRLIKLARI (otomatik normalize, toplam %100)</div>
-        {(['w1', 'w2', 'w3'] as const).map((k) => {
-          const label = k === 'w1' ? 'CVD' : k === 'w2' ? 'OBI' : 'VEL'
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}>İNDİKATÖR AĞIRLIKLARI (otomatik normalize, toplam %100) — 5’li mikro yapı</div>
+        {(['w1', 'w2', 'w3', 'w4', 'w5'] as const).map((k) => {
+          const label = k === 'w1' ? 'CVD' : k === 'w2' ? 'OBI' : k === 'w3' ? 'VEL' : k === 'w4' ? 'MICRO' : 'VPIN'
           const pct = Math.round((weights[k] / total) * 100)
+          const color = k==='w4' ? 'var(--amber)' : k==='w5' ? 'var(--violet)' : 'var(--cyan)'
           return (
             <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                 <span style={{ color: 'var(--text)' }}>{label} ({k})</span>
-                <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>{pct}%</span>
+                <span style={{ color, fontWeight: 700 }}>{pct}%</span>
               </div>
               <input
                 type="range"
@@ -99,7 +100,7 @@ export function SettingsScreen() {
                 step={0.05}
                 value={weights[k]}
                 onChange={(e) => handleWeight(k, parseFloat(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--cyan)' }}
+                style={{ width: '100%', accentColor: color }}
               />
             </div>
           )
@@ -137,7 +138,7 @@ export function SettingsScreen() {
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           onClick={() => {
-            const sig = { id: `test-${Date.now()}`, side: 'BUY' as const, price: useDataStore.getState().price || 50000, confidence: 85, score: 1.1, breakdown: { cvd: 0.8, obi: 0.5, vel: 0.3, w1: weights.w1, w2: weights.w2, w3: weights.w3 }, ts: Date.now() }
+            const sig = { id: `test-${Date.now()}`, side: 'BUY' as const, price: useDataStore.getState().price || 50000, confidence: 85, score: 1.1, breakdown: { cvd: 0.8, obi: 0.5, vel: 0.3, micro: 0.4, vpin: 0.2, w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: weights.w4, w5: weights.w5 }, ts: Date.now() }
             useDataStore.setState((s) => ({ signals: [sig, ...s.signals].slice(0, 200) }))
             if (sound) playBuy()
             window.dispatchEvent(new CustomEvent('signal-fired', { detail: sig }))
@@ -149,7 +150,7 @@ export function SettingsScreen() {
         </button>
         <button
           onClick={() => {
-            const sig = { id: `test-${Date.now()}`, side: 'SELL' as const, price: useDataStore.getState().price || 50000, confidence: 78, score: -1.0, breakdown: { cvd: -0.7, obi: -0.5, vel: -0.4, w1: weights.w1, w2: weights.w2, w3: weights.w3 }, ts: Date.now() }
+            const sig = { id: `test-${Date.now()}`, side: 'SELL' as const, price: useDataStore.getState().price || 50000, confidence: 78, score: -1.0, breakdown: { cvd: -0.7, obi: -0.5, vel: -0.4, micro: -0.3, vpin: 0.6, w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: weights.w4, w5: weights.w5 }, ts: Date.now() }
             useDataStore.setState((s) => ({ signals: [sig, ...s.signals].slice(0, 200) }))
             if (sound) playSell()
             window.dispatchEvent(new CustomEvent('signal-fired', { detail: sig }))
