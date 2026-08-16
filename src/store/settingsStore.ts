@@ -25,8 +25,8 @@ export const useSettingsStore = create<SettingsState>()(
       source: 'okx',
       symbol: 'BTC-USDT',
       weights: { w1: 0.5, w2: 0.3, w3: 0.2 },
-      threshold: 0.9,
-      cooldown: 25,
+      threshold: 0.75,
+      cooldown: 18,
       sound: true,
       haptics: true,
       setSource: (source) => set({ source }),
@@ -45,15 +45,15 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'signal-radar-settings',
-      version: 2,
+      version: 3,
       migrate: (persistedState: any, version: number) => {
-        if (version < 2) {
-          // Force optimized defaults for v2
+        if (version < 3) {
+          // v3: gevşetilmiş dengeli ayar
           return {
             ...persistedState,
             weights: { w1: 0.5, w2: 0.3, w3: 0.2 },
-            threshold: 0.9,
-            cooldown: 25
+            threshold: 0.75,
+            cooldown: 18
           }
         }
         return persistedState as any

@@ -30,7 +30,7 @@ const cvdNormHistory: number[] = []
 const velocityHistory: number[] = []
 let obiValue = 0
 let velocityValue = 0
-let engine = new SignalEngine({ threshold: 0.9, cooldownMs: 25000, hysteresis: 0.4 })
+let engine = new SignalEngine({ threshold: 0.75, cooldownMs: 18000, hysteresis: 0.35 })
 let lastThrottle = 0
 let currentCandle: Candle | null = null
 const candles: Candle[] = []
@@ -40,7 +40,7 @@ function getSettings() {
     const raw = localStorage.getItem('signal-radar-settings')
     if (raw) return JSON.parse(raw)
   } catch {}
-  return { weights: { w1: 0.5, w2: 0.3, w3: 0.2 }, threshold: 0.9, cooldown: 25 }
+  return { weights: { w1: 0.5, w2: 0.3, w3: 0.2 }, threshold: 0.75, cooldown: 18 }
 }
 
 function updateCandle(price: number, ts: number) {
@@ -116,7 +116,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     const shouldSuppress = !filter.pass
 
     // engine tick - optimized: threshold 0.9, cooldown 25s, hysteresis 0.4
-    engine.updateConfig({ threshold: settings.threshold ?? 0.9, cooldownMs: (settings.cooldown ?? 25) * 1000, hysteresis: 0.4 })
+    engine.updateConfig({ threshold: settings.threshold ?? 0.75, cooldownMs: (settings.cooldown ?? 18) * 1000, hysteresis: 0.35 })
     let res = engine.tick({
       score,
       price: t.price,
@@ -210,7 +210,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
     const shouldSuppress = !filter.pass
 
-    engine.updateConfig({ threshold: settings.threshold ?? 0.9, cooldownMs: (settings.cooldown ?? 25) * 1000, hysteresis: 0.4 })
+    engine.updateConfig({ threshold: settings.threshold ?? 0.75, cooldownMs: (settings.cooldown ?? 18) * 1000, hysteresis: 0.35 })
     let res = engine.tick({ score, price, breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ }, weights, ts })
     if (shouldSuppress && res.signal) {
       res = { ...res, signal: null }
