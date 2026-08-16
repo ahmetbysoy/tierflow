@@ -5,7 +5,9 @@ import { calcOBIRaw, updateOBI } from '../core/indicators/imbalance'
 import { calcVelocity, calcVelocityZ } from '../core/indicators/velocity'
 import { SignalEngine, computeScore, normalizeWeights } from '../core/signal/engine'
 import { applyFilters } from '../core/signal/filters'
+import { globalTracker } from '../core/performance/signalTracker'
 import type { NormalizedTrade, NormalizedDepth, Candle, Signal, Metrics } from '../types'
+import type { Tracker } from '../core/performance/signalTracker'
 
 interface DataState {
   price: number
@@ -15,8 +17,8 @@ interface DataState {
   candles: Candle[]
   cvd: number
   lastUpdate: number
-  // internal buffers not exposed directly but kept in closure
-  // actions
+  trackers: Tracker[]
+  stats: ReturnType<typeof globalTracker.getStats>
   handleTrade: (t: NormalizedTrade) => void
   handleDepth: (d: NormalizedDepth) => void
   handleMark: (price: number, ts: number) => void
@@ -44,7 +46,7 @@ function getSettings() {
 }
 
 function updateCandle(price: number, ts: number) {
-  const interval = 15 // sec
+  const interval = 15
   const candleTime = Math.floor(ts / 1000 / interval) * interval
   if (!currentCandle || currentCandle.time !== candleTime) {
     if (currentCandle) candles.push(currentCandle)
@@ -62,7 +64,6 @@ function updateCandle(price: number, ts: number) {
     currentCandle.low = Math.min(currentCandle.low, price)
     currentCandle.close = price
   }
-  // Keep candles array + currentCandle as live
 }
 
 export const useDataStore = create<DataState>((set, get) => ({
@@ -73,17 +74,21 @@ export const useDataStore = create<DataState>((set, get) => ({
   candles: [],
   cvd: 0,
   lastUpdate: 0,
+  trackers: [],
+  stats: globalTracker.getStats(),
 
   handleTrade: (t) => {
     const now = Date.now()
-    // throttle 10Hz (100ms)
+    // Always update tracker live PnL (even if throttled)
+    globalTracker.updatePrice(t.price, t.ts)
+
     if (now - lastThrottle < 100) {
-      // still buffer trade but don't recompute UI-heavy metrics? We buffer anyway
       tradeBuffer.push(t)
       priceHistory.push({ price: t.price, ts: t.ts })
       if (priceHistory.length > 500) priceHistory.shift()
-      // still update candle even if throttled? do it lightweight
       updateCandle(t.price, t.ts)
+      // update trackers in store even when throttled (for live)
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price: t.price, lastUpdate: t.ts })
       return
     }
     lastThrottle = now
@@ -100,22 +105,18 @@ export const useDataStore = create<DataState>((set, get) => ({
     const cvdZ = calcCVDZ(cvdNormHistory)
     const divergenceAdj = detectDivergence(priceHistory, cvdNormHistory, 20)
 
-    // velocity
     velocityValue = calcVelocity(priceHistory, velocityValue)
     velocityHistory.push(velocityValue)
     if (velocityHistory.length > 100) velocityHistory.shift()
     const velocityZ = calcVelocityZ(velocityHistory)
 
-    // obi already from depth, use current obiValue
     const settings = getSettings()
     const weights = normalizeWeights(settings.weights || { w1: 0.5, w2: 0.3, w3: 0.2 })
     const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj)
 
-    // Patch: apply microstructure filters (flat, OBI, confluence) - debug live trace sonrası
     const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
     const shouldSuppress = !filter.pass
 
-    // engine tick - optimized: threshold 0.9, cooldown 25s, hysteresis 0.4
     engine.updateConfig({ threshold: settings.threshold ?? 0.75, cooldownMs: (settings.cooldown ?? 18) * 1000, hysteresis: 0.35 })
     let res = engine.tick({
       score,
@@ -124,11 +125,8 @@ export const useDataStore = create<DataState>((set, get) => ({
       weights,
       ts: t.ts
     })
-    // Suppress signal if filter fails (flat/OBI/confluence) - but keep engine state tracking
     if (shouldSuppress && res.signal) {
-      // Filtered - don't fire, keep as COOLDOWN/IDLE without signal
       res = { ...res, signal: null }
-      // Also prevent ARMED -> stay IDLE if filtered
       if (res.state === 'ARMED' || res.state === 'FIRED') {
         res.state = 'IDLE' as any
       }
@@ -154,43 +152,49 @@ export const useDataStore = create<DataState>((set, get) => ({
       engineState: res.state,
       lastUpdate: t.ts,
       candles: allCandles,
-      cvd: cvdNorm
+      cvd: cvdNorm,
+      trackers: globalTracker.getAll(),
+      stats: globalTracker.getStats()
     })
 
     if (res.signal) {
-      // play sound via side effect - will be handled in component or here
+      globalTracker.addSignal(res.signal)
       set((s) => {
         const next = [res.signal!, ...s.signals].slice(0, 200)
-        return { signals: next }
+        return { signals: next, trackers: globalTracker.getAll(), stats: globalTracker.getStats() }
       })
-      // trigger global event for audio/confetti
       window.dispatchEvent(new CustomEvent('signal-fired', { detail: res.signal }))
+    } else {
+      // update trackers even when no new signal (for MFE/MAE)
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats() })
     }
   },
 
   handleDepth: (d) => {
     const raw = calcOBIRaw(d, 20)
     obiValue = updateOBI(obiValue, raw, 0.2)
-    // throttle not needed for depth alone? we update metrics lightly but not engine unless trade also
-    // Update metrics obi part for UI without full recompute to keep bar live
     const now = Date.now()
     if (now - lastThrottle < 100) return
     const s = get()
     set({
-      metrics: { ...s.metrics, obi: obiValue, obiRaw: raw }
+      metrics: { ...s.metrics, obi: obiValue, obiRaw: raw },
+      trackers: globalTracker.getAll(),
+      stats: globalTracker.getStats()
     })
   },
 
   handleMark: (price, ts) => {
-    // treat as price update for candle and velocity if no trades
+    globalTracker.updatePrice(price, ts)
     priceHistory.push({ price, ts })
     if (priceHistory.length > 500) priceHistory.shift()
     updateCandle(price, ts)
     const now = Date.now()
-    if (now - lastThrottle < 100) return
+    if (now - lastThrottle < 100) {
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price, lastUpdate: ts })
+      return
+    }
     lastThrottle = now
 
-    // recompute velocity even without trade
     velocityValue = calcVelocity(priceHistory, velocityValue)
     velocityHistory.push(velocityValue)
     if (velocityHistory.length > 100) velocityHistory.shift()
@@ -198,9 +202,6 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     const trades = tradeBuffer.toArray()
     const cvdNorm = trades.length > 0 ? calcCVDNorm(trades, 60, ts) : (cvdNormHistory[cvdNormHistory.length - 1] ?? 0)
-    if (trades.length > 0) {
-      // already pushed in handleTrade case, but for mark we don't have new trade, keep history
-    }
     const cvdZ = calcCVDZ(cvdNormHistory)
     const divergenceAdj = detectDivergence(priceHistory, cvdNormHistory, 20)
     const settings = getSettings()
@@ -238,12 +239,17 @@ export const useDataStore = create<DataState>((set, get) => ({
       metrics,
       engineState: res.state,
       lastUpdate: ts,
-      candles: allCandles
+      candles: allCandles,
+      trackers: globalTracker.getAll(),
+      stats: globalTracker.getStats()
     })
 
     if (res.signal) {
-      set((s) => ({ signals: [res.signal!, ...s.signals].slice(0, 200) }))
+      globalTracker.addSignal(res.signal)
+      set((s) => ({ signals: [res.signal!, ...s.signals].slice(0, 200), trackers: globalTracker.getAll(), stats: globalTracker.getStats() }))
       window.dispatchEvent(new CustomEvent('signal-fired', { detail: res.signal }))
+    } else {
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats() })
     }
   },
 
@@ -255,6 +261,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     obiValue = 0
     velocityValue = 0
     engine.reset()
+    globalTracker.clear()
     candles.length = 0
     currentCandle = null
     set({
@@ -264,7 +271,9 @@ export const useDataStore = create<DataState>((set, get) => ({
       signals: [],
       candles: [],
       cvd: 0,
-      lastUpdate: 0
+      lastUpdate: 0,
+      trackers: [],
+      stats: globalTracker.getStats()
     })
   }
 }))
@@ -280,6 +289,7 @@ export const _internal = {
   get velocityValue() { return velocityValue },
   set velocityValue(v) { velocityValue = v },
   engine,
+  tracker: globalTracker,
   resetInternal() {
     tradeBuffer.clear()
     priceHistory.length = 0
@@ -288,6 +298,7 @@ export const _internal = {
     obiValue = 0
     velocityValue = 0
     engine.reset()
+    globalTracker.clear()
     candles.length = 0
     currentCandle = null
     lastThrottle = 0
