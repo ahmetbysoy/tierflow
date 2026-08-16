@@ -1,11 +1,11 @@
 /**
- * Signal Filters - canlı takip debug sonrası patchler
- * - Yatay piyasa filtresi: fiyat range < %0.15 ise sinyal baskıla
- * - OBI confluence: |OBI| < 0.15 ise baskıla
- * - 2/3 onay: en az 2 indikatör aynı yönde ve |z|>0.5
+ * Signal Filters - canlı takip debug sonrası patchler (v2 gevşetilmiş)
+ * - Yatay piyasa filtresi: fiyat range < %0.10 ise sinyal baskıla (0.15->0.10 gevşetildi)
+ * - OBI confluence: |OBI| < 0.10 ise baskıla (0.15->0.10)
+ * - 2/3 onay: en az 2 indikatör aynı yönde ve |z|>0.4
  */
 
-export function isFlatMarket(priceHistory: { price: number; ts: number }[], windowMs = 60000, thresholdPct = 0.15): boolean {
+export function isFlatMarket(priceHistory: { price: number; ts: number }[], windowMs = 60000, thresholdPct = 0.08): boolean {
   if (priceHistory.length < 10) return false
   const now = Date.now()
   const cutoff = now - windowMs
@@ -20,7 +20,7 @@ export function isFlatMarket(priceHistory: { price: number; ts: number }[], wind
   return rangePct < thresholdPct
 }
 
-export function hasOBIConfluence(obi: number, minAbs = 0.15): boolean {
+export function hasOBIConfluence(obi: number, minAbs = 0.08): boolean {
   return Math.abs(obi) >= minAbs
 }
 
@@ -51,11 +51,11 @@ export function applyFilters(params: {
   velZ: number
   score: number
 }): FilterResult {
-  if (isFlatMarket(params.priceHistory)) {
-    return { pass: false, reason: 'Flat market - range <0.15%' }
+  if (isFlatMarket(params.priceHistory, 60000, 0.08)) {
+    return { pass: false, reason: 'Flat market - range <0.08%' }
   }
-  if (!hasOBIConfluence(params.obi, 0.15)) {
-    return { pass: false, reason: `OBI too weak |OBI|=${params.obi.toFixed(2)} <0.15` }
+  if (!hasOBIConfluence(params.obi, 0.08)) {
+    return { pass: false, reason: `OBI too weak |OBI|=${params.obi.toFixed(2)} <0.08` }
   }
   if (!hasConfluence(params.cvdZ, params.obi, params.velZ, params.score, 0.4)) {
     return { pass: false, reason: 'No confluence - need 2/3 indicators same direction' }
