@@ -1,6 +1,8 @@
 import type { Signal } from '../../types'
 
 export type EngineState = 'IDLE' | 'ARMED' | 'FIRED' | 'COOLDOWN'
+// Gelecek için: 'WAITING_CONFIRMATION' eklenecek → XState'e geçişi kolay
+// export type EngineState = 'IDLE' | 'ARMED' | 'WAITING_CONFIRMATION' | 'FIRED' | 'COOLDOWN'
 
 export interface Weights {
   w1: number
@@ -49,13 +51,19 @@ export interface EngineTickResult {
   confidence: number
 }
 
+/**
+ * SignalEngine — XState tarzı finite-state-machine
+ * İç içe if'ler yerine tablo-driven, her state ayrı handler.
+ * Yeni state eklemek için sadece EngineState union'ına ekle + handler yaz.
+ * Örn: WAITING_CONFIRMATION → handleWaitingConfirmation()
+ */
 export class SignalEngine {
   state: EngineState = 'IDLE'
   private consecutive = 0
   private lastFiredAt = 0
   private lastFiredSide: 'BUY' | 'SELL' | null = null
   private lastScore = 0
-  private hasSeenNeutralSinceFired = true // initially true so first signal allowed
+  private hasSeenNeutralSinceFired = true
 
   constructor(private config: EngineConfig = { threshold: 0.75, cooldownMs: 18000, hysteresis: 0.35 }) {}
 
@@ -63,6 +71,70 @@ export class SignalEngine {
     this.config = { ...this.config, ...cfg }
   }
 
+  // ── Helpers ────────────────────────────────────────────────
+  private sideOf(score: number): 'BUY' | 'SELL' {
+    return score > 0 ? 'BUY' : 'SELL'
+  }
+
+  private isNeutral(score: number): boolean {
+    return Math.abs(score) < this.config.hysteresis
+  }
+
+  private isBlockedByHysteresis(score: number): boolean {
+    const wouldBeSide = this.sideOf(score)
+    return !!(
+      this.lastFiredSide &&
+      wouldBeSide !== this.lastFiredSide &&
+      !this.hasSeenNeutralSinceFired &&
+      Math.abs(score) >= this.config.threshold
+    )
+  }
+
+  private trackNeutral(score: number): void {
+    if (this.isNeutral(score)) this.hasSeenNeutralSinceFired = true
+  }
+
+  private makeSignal(score: number, price: number, breakdown: any, weights: Weights, ts: number): Signal {
+    const side = this.sideOf(score)
+    return {
+      id: `${ts}-${side}`,
+      side,
+      price,
+      confidence: computeConfidence(score),
+      score,
+      breakdown: {
+        cvd: breakdown.cvd, obi: breakdown.obi, vel: breakdown.vel,
+        micro: breakdown.micro, vpin: breakdown.vpin, detector: (breakdown as any).detector,
+        w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: (weights as any).w4, w5: (weights as any).w5, w6: (weights as any).w6
+      },
+      ts
+    }
+  }
+
+  // ── State handlers (tablo-driven) ───────────────────────
+  private handleCooldown(score: number, ts: number): { next: EngineState; result: EngineTickResult } | null {
+    if (this.state !== 'COOLDOWN') return null
+    if (ts - this.lastFiredAt >= this.config.cooldownMs) {
+      this.state = 'IDLE'
+      this.consecutive = 0
+      this.trackNeutral(score)
+      this.lastScore = score
+      return { next: 'IDLE', result: { state: this.state, signal: null, score, confidence: computeConfidence(score) } }
+    }
+    this.trackNeutral(score)
+    this.lastScore = score
+    return { next: 'COOLDOWN', result: { state: this.state, signal: null, score, confidence: computeConfidence(score) } }
+  }
+
+  private handleFired(score: number): { next: EngineState; result: EngineTickResult } | null {
+    if (this.state !== 'FIRED') return null
+    this.state = 'COOLDOWN'
+    this.trackNeutral(score)
+    this.lastScore = score
+    return { next: 'COOLDOWN', result: { state: this.state, signal: null, score, confidence: computeConfidence(score) } }
+  }
+
+  // ── Public tick (FSM entry) ─────────────────────────────
   tick(params: {
     score: number
     price: number
@@ -73,85 +145,47 @@ export class SignalEngine {
     const { score, price, breakdown, weights, ts } = params
     const absScore = Math.abs(score)
     const threshold = this.config.threshold
-    const hysteresis = this.config.hysteresis
 
-    // COOLDOWN kontrolü - cooldown süresi doldu mu?
-    if (this.state === 'COOLDOWN') {
-      if (ts - this.lastFiredAt >= this.config.cooldownMs) {
-        this.state = 'IDLE'
-        this.consecutive = 0
-        // Cooldown bittiği tick'i nötr kabul et, bir sonraki tick'ten itibaren 2 ardışık sayılsın (test beklentisi)
-        if (absScore < hysteresis) this.hasSeenNeutralSinceFired = true
-        this.lastScore = score
-        return { state: this.state, signal: null, score, confidence: computeConfidence(score) }
-      } else {
-        // Cooldown sırasında bile histerezis için neutral görme takibi yap
-        if (absScore < hysteresis) this.hasSeenNeutralSinceFired = true
-        this.lastScore = score
-        return { state: this.state, signal: null, score, confidence: computeConfidence(score) }
-      }
-    }
+    // 1. COOLDOWN
+    const cd = this.handleCooldown(score, ts)
+    if (cd) return cd.result
 
-    // FIRED'dan hemen sonraki tick -> COOLDOWN'a geç (cooldown süresi FIRED anından başlar, burada lastFiredAt güncellenmez)
-    if (this.state === 'FIRED') {
-      this.state = 'COOLDOWN'
-      // hasSeenNeutral zaten false, FIRED sonrası neutral görülmeden karşı yön engellenir
-      // Bu tick'te de neutral kontrolü yap
-      if (absScore < hysteresis) this.hasSeenNeutralSinceFired = true
-      this.lastScore = score
-      return { state: this.state, signal: null, score, confidence: computeConfidence(score) }
-    }
+    // 2. FIRED → COOLDOWN
+    const fd = this.handleFired(score)
+    if (fd) return fd.result
 
-    // Histerezis: FIRED sonrası skor |S| < 0.3'e düşmeden karşı yön tetiklenemez
-    // Eğer neutral görülmediyse ve karşı yöne geçmek isteniyorsa engelle
-    const wouldBeSide = score > 0 ? 'BUY' : 'SELL'
-    if (this.lastFiredSide && wouldBeSide !== this.lastFiredSide && !this.hasSeenNeutralSinceFired) {
-      // Eğer bu tick skor neutral bölgeye düştüyse, artık bir sonraki karşı yöne izin ver
-      if (absScore < hysteresis) {
+    // 3. Histerezis: karşı yön blok
+    if (this.isBlockedByHysteresis(score)) {
+      if (this.isNeutral(score)) {
         this.hasSeenNeutralSinceFired = true
-        // Bu tick zaten threshold altında, sinyal yok ama state'i güncelle
         this.consecutive = 0
         if (this.state === 'ARMED') this.state = 'IDLE'
         this.lastScore = score
         return { state: this.state, signal: null, score, confidence: computeConfidence(score) }
       }
-      // Neutral görülmeden karşı yön threshold üstündeyse engelle
-      if (absScore >= threshold) {
-        this.lastScore = score
-        return { state: this.state, signal: null, score, confidence: computeConfidence(score) }
-      }
+      this.lastScore = score
+      return { state: this.state, signal: null, score, confidence: computeConfidence(score) }
     }
 
-    // Neutral bölgeye düşüşü her tick'te takip et
-    if (absScore < hysteresis) {
-      this.hasSeenNeutralSinceFired = true
-    }
+    // 4. Neutral takibi
+    this.trackNeutral(score)
 
+    // 5. Threshold + consecutive (IDLE → ARMED → FIRED)
+    // Gelecekte: ARMED → WAITING_CONFIRMATION → FIRED eklemek için buraya bir handler ekle
+    // Örn: if (this.state === 'ARMED' && absScore >= threshold) return this.handleWaitingConfirmation(...)
     if (absScore >= threshold) {
       this.consecutive += 1
       if (this.consecutive >= 2) {
-        // 2 tick üst üste threshold üstünde -> FIRED
         this.state = 'FIRED'
-        const side: 'BUY' | 'SELL' = score > 0 ? 'BUY' : 'SELL'
-
-        const signal: Signal = {
-          id: `${ts}-${side}`,
-          side,
-          price,
-          confidence: computeConfidence(score),
-          score,
-          breakdown: { cvd: breakdown.cvd, obi: breakdown.obi, vel: breakdown.vel, micro: breakdown.micro, vpin: breakdown.vpin, detector: (breakdown as any).detector, w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: (weights as any).w4, w5: (weights as any).w5, w6: (weights as any).w6 },
-          ts
-        }
-        this.lastFiredSide = side
+        const signal = this.makeSignal(score, price, breakdown, weights, ts)
+        this.lastFiredSide = signal.side
         this.lastFiredAt = ts
-        this.hasSeenNeutralSinceFired = false // yeni FIRED sonrası neutral görülmedi
+        this.hasSeenNeutralSinceFired = false
         this.consecutive = 0
         this.lastScore = score
         return { state: this.state, signal, score, confidence: signal.confidence }
-      } else {
-        this.state = 'ARMED'
       }
+      this.state = 'ARMED'
     } else {
       this.consecutive = 0
       if (this.state === 'ARMED') this.state = 'IDLE'
