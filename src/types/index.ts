@@ -37,8 +37,8 @@ export interface Signal {
   price: number
   confidence: number
   score: number
-  breakdown: { cvd: number; obi: number; vel: number; micro?: number; vpin?: number; w1: number; w2: number; w3: number; w4?: number; w5?: number }
+  breakdown: { cvd: number; obi: number; vel: number; micro?: number; vpin?: number; detector?: number; w1: number; w2: number; w3: number; w4?: number; w5?: number; w6?: number }
   ts: number
 }
 
-export interface Metrics { cvd: number; cvdNorm: number; cvdZ: number; obi: number; obiRaw: number; velocity: number; velocityZ: number; microprice: number; microDev: number; vpin: number; vpinLabel: string; score: number; price: number }
+export interface Metrics { cvd: number; cvdNorm: number; cvdZ: number; obi: number; obiRaw: number; velocity: number; velocityZ: number; microprice: number; microDev: number; vpin: number; vpinLabel: string; detectorScore?: number; score: number; price: number }

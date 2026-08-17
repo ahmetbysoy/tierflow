@@ -1,10 +1,10 @@
 import { useSettingsStore } from '../../store/settingsStore'
 import { useDataStore } from '../../store/dataStore'
 import { playBuy, playSell } from '../../core/audio/sound'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
-const FUTURES_COINS = [
-  'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','MATICUSDT','LINKUSDT','LTCUSDT','BCHUSDT','ETCUSDT','FILUSDT','ARBUSDT','OPUSDT','SUIUSDT','APTUSDT','PEPEUSDT','SHIBUSDT','TRBUSDT','BLZUSDT','WIFUSDT','ENAUSDT','TAOUSDT','NEARUSDT','UNIUSDT','ATOMUSDT','ETCUSDT','XLMUSDT','VETUSDT','ICPUSDT','FETUSDT','RNDRUSDT','INJUSDT','SEIUSDT','TIAUSDT','JUPUSDT','PYTHUSDT','BONKUSDT','FLOKIUSDT','MEMEUSDT','ORDIUSDT','1000PEPEUSDT','1000SHIBUSDT'
+const FALLBACK_FUTURES = [
+  'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','LINKUSDT','LTCUSDT','BCHUSDT','FILUSDT','ARBUSDT','OPUSDT','SUIUSDT','APTUSDT','PEPEUSDT','SHIBUSDT','TRBUSDT','BLZUSDT','WIFUSDT','ENAUSDT','TAOUSDT','NEARUSDT','UNIUSDT','ATOMUSDT','XLMUSDT','VETUSDT','ICPUSDT','FETUSDT','RNDRUSDT','INJUSDT','SEIUSDT','TIAUSDT','JUPUSDT','PYTHUSDT','BONKUSDT','FLOKIUSDT','MEMEUSDT','ORDIUSDT','1000PEPEUSDT','1000SHIBUSDT'
 ]
 
 function normalizeFuturesSymbol(input: string): string {
@@ -35,12 +35,26 @@ export function SettingsScreen() {
 
   const [coinInput, setCoinInput] = useState(symbol.replace('-',''))
   const [showDropdown, setShowDropdown] = useState(false)
+  const [futuresCoins, setFuturesCoins] = useState<string[]>(FALLBACK_FUTURES)
+
+  useEffect(() => {
+    fetch('https://fapi.binance.com/fapi/v1/exchangeInfo')
+      .then(r => r.json())
+      .then((data: any) => {
+        const syms: string[] = (data.symbols || [])
+          .filter((s: any) => s.status === 'TRADING' && s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT')
+          .map((s: any) => s.symbol as string)
+          .filter((s: string) => !s.includes('_'))
+        if (syms.length > 20) setFuturesCoins(syms)
+      })
+      .catch(() => {})
+  }, [])
 
   const filteredCoins = useMemo(() => {
     const q = coinInput.toUpperCase()
-    if (!q) return FUTURES_COINS.slice(0, 8)
-    return FUTURES_COINS.filter(c => c.includes(q)).slice(0, 8)
-  }, [coinInput])
+    if (!q) return futuresCoins.slice(0, 8)
+    return futuresCoins.filter(c => c.includes(q)).slice(0, 8)
+  }, [coinInput, futuresCoins])
 
   const handleSelectCoin = (coin: string) => {
     const norm = normalizeFuturesSymbol(coin)
