@@ -56,6 +56,13 @@ function mean(arr: number[]): number {
   return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
 }
 
+function std(arr: number[]): number {
+  if (arr.length < 2) return 0
+  const m = mean(arr)
+  const v = arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length
+  return Math.sqrt(v)
+}
+
 // ── PaperTradingEngine ────────────────────────────────────
 
 export class PaperTradingEngine {
@@ -219,8 +226,15 @@ export class PaperTradingEngine {
       else sumLossR += Math.abs(rVal)
     }
     this.performance.pf = sumLossR > 0 ? sumWinR / sumLossR : sumWinR > 0 ? Infinity : 0
-    this.performance.sharpe =
-      this.performance.trades > 5 ? this.performance.netR / Math.sqrt(this.performance.trades) : 0
+    // Real Sharpe = mean(R) / std(R) * sqrt(N) — std(closedPositions.map(r))
+    const rs = this.closedPositions.map(cp => {
+      const risk = Math.abs(cp.entry - cp.stop) || 1
+      const pnlCp = cp.dir === 'LONG' ? (cp.exit! - cp.entry) * cp.qty : (cp.entry - cp.exit!) * cp.qty
+      return pnlCp / risk
+    })
+    const meanR = mean(rs)
+    const stdR = std(rs)
+    this.performance.sharpe = stdR > 1e-9 && rs.length > 5 ? (meanR / stdR) * Math.sqrt(rs.length) : 0
 
     this.emit('paper:close', { position, exitPrice, reason, pnl, r })
   }
