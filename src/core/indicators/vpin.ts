@@ -24,6 +24,7 @@ export interface VPINConfig {
   maxBuckets: number
   tradeLookback: number
   minBucketNotional: number
+  bucketTimeoutMs: number
 }
 
 // ── Utilities ─────────────────────────────────────────────
@@ -37,6 +38,7 @@ function mean(arr: number[]): number {
 export class VPIN {
   private state: VPINState
   private config: VPINConfig
+  private lastBucketTs: number
   private listeners: Map<string, Set<Function>> = new Map()
 
   constructor(config?: Partial<VPINConfig>) {
@@ -44,8 +46,10 @@ export class VPIN {
       maxBuckets: 50,
       tradeLookback: 200,
       minBucketNotional: 100_000,
+      bucketTimeoutMs: 60_000,
       ...config
     }
+    this.lastBucketTs = Date.now()
     this.state = {
       value: 0,
       label: 'Low',
@@ -83,8 +87,10 @@ export class VPIN {
     const targetBucket = Math.max(this.config.minBucketNotional, rollingVol * 0.001)
     this.state.bucketSize = targetBucket
 
-    // Bucket completion check
-    if (this.state.currentNotional >= targetBucket) {
+    // Bucket completion check + time-based fallback for low-volume coins
+    const now = Date.now()
+    const shouldForceClose = this.state.currentNotional > 0 && (now - this.lastBucketTs) >= this.config.bucketTimeoutMs
+    if (this.state.currentNotional >= targetBucket || shouldForceClose) {
       const total = this.state.currentBuy + this.state.currentSell
       if (total > 0) {
         this.state.buckets.push(
@@ -97,6 +103,7 @@ export class VPIN {
       this.state.currentBuy = 0
       this.state.currentSell = 0
       this.state.currentNotional = 0
+      this.lastBucketTs = now
     }
 
     // Accumulate
@@ -134,6 +141,7 @@ export class VPIN {
 
   /** Reset state (e.g. on symbol change). */
   reset(): void {
+    this.lastBucketTs = Date.now()
     this.state = {
       value: 0,
       label: 'Low',
