@@ -167,6 +167,14 @@ export class FlowEngine {
     const pressure = clamp((delta / b.activity) * 100, -100, 100)
     const strength = clamp(Math.abs(delta) / (b.activity || 1) * 100, 0, 100)
 
+    // Absorpsiyon: büyük hacme rağmen fiyat hareket etmiyor
+    const priceChange = Math.abs(b.closePrice - b.openPrice) / (b.openPrice || 1)
+    const avgActivity = this.candles.length
+      ? this.candles.slice(-10).reduce((a, c) => a + c.activity, 0) / Math.min(10, this.candles.length)
+      : b.activity
+    const absorption = priceChange < 0.0008 && b.activity > avgActivity * 2
+    b.absorption = absorption
+
     const candle: FlowCandle = {
       ts: b.startTs,
       pressureOpen: this.candles.length
@@ -185,7 +193,7 @@ export class FlowEngine {
       priceLow: b.low,
       priceClose: b.closePrice,
       liquidations: b.liquidations,
-      absorption: b.absorption
+      absorption
     }
 
     this.candles.push(candle)
