@@ -208,11 +208,19 @@ export class PaperTradingEngine {
       this.closedPositions.slice(0, 20).map(p => (p.closedAt || 0) - p.openedAt)
     )
 
-    const { wins, trades } = this.performance
-    this.performance.pf =
-      trades ? Math.max(0, (wins * 1.2) / Math.max(1, trades - wins)) : 0
+    // Real PF = sumWinR / abs(sumLossR) from closedPositions
+    let sumWinR = 0
+    let sumLossR = 0
+    for (const cp of this.closedPositions) {
+      const risk = Math.abs(cp.entry - cp.stop) || 1
+      const pnlCp = cp.dir === 'LONG' ? (cp.exit! - cp.entry) * cp.qty : (cp.entry - cp.exit!) * cp.qty
+      const rVal = pnlCp / risk
+      if (rVal > 0) sumWinR += rVal
+      else sumLossR += Math.abs(rVal)
+    }
+    this.performance.pf = sumLossR > 0 ? sumWinR / sumLossR : sumWinR > 0 ? Infinity : 0
     this.performance.sharpe =
-      trades > 5 ? this.performance.netR / Math.sqrt(trades) : 0
+      this.performance.trades > 5 ? this.performance.netR / Math.sqrt(this.performance.trades) : 0
 
     this.emit('paper:close', { position, exitPrice, reason, pnl, r })
   }
