@@ -56,6 +56,10 @@ export function hasConfluence(
   return count >= 2
 }
 
+export function isHighArbitrageSpread(spreadPct: number, threshold = 0.15): boolean {
+  return spreadPct > threshold
+}
+
 export interface FilterResult {
   pass: boolean
   reason?: string
@@ -67,6 +71,7 @@ export function applyFilters(params: {
   obi: number
   velZ: number
   score: number
+  spreadPct?: number
 }): FilterResult {
   if (isFlatMarket(params.priceHistory, 60000, 0.02)) {
     return { pass: false, reason: 'Flat market - range < dinamik eşik (ATR)' }
@@ -76,6 +81,9 @@ export function applyFilters(params: {
   }
   if (!hasConfluence(params.cvdZ, params.obi, params.velZ, params.score, 0.30)) {
     return { pass: false, reason: 'No confluence - need 2/3 indicators same direction' }
+  }
+  if (params.spreadPct !== undefined && isHighArbitrageSpread(params.spreadPct, 0.15)) {
+    return { pass: false, reason: `High arbitrage spread ${params.spreadPct.toFixed(2)}% >0.15% - mikro yapı güvenilmez` }
   }
   return { pass: true }
 }

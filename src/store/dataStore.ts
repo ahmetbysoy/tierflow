@@ -12,6 +12,7 @@ import { FlowEngine } from '../core/flow/flowEngine'
 import { DetectorSuite } from '../core/detectors/detectorSuite'
 import { TradePlanGenerator } from '../core/signal/tradePlan'
 import { PaperTradingEngine } from '../core/paper/paperTrading'
+import { CrossExchangePoller } from '../core/crossExchange/crossExchange'
 import type { NormalizedTrade, NormalizedDepth, Candle, Signal, Metrics } from '../types'
 import type { Tracker } from '../core/performance/signalTracker'
 import type { FlowCandle } from '../core/flow/flowEngine'
@@ -59,7 +60,13 @@ const flowEngine = new FlowEngine({ mode: 'time', timeframeMs: 5000, volumeTarge
 const detectorSuite = new DetectorSuite()
 const tradePlanGenerator = new TradePlanGenerator({ minRR: 2.5, kellyFraction: 0.35, balance: 1000, riskPct: 2, maxLeverage: 20, feeRateBps: 4, minConfidence: 60 })
 const paperTradingEngine = new PaperTradingEngine({ cooldownMs: 30000, maxPositions: 3, maxClosedHistory: 500, maxEquityLength: 300 })
+const crossExchangePoller = new CrossExchangePoller({ intervalMs: 3000, timeoutMs: 5000, enabled: ['bybit', 'okx', 'mexc'] })
 let spreadValue = 0
+
+// CrossExchangePoller singleton start (4. singleton)
+if (typeof window !== 'undefined') {
+  crossExchangePoller.start('BTCUSDT')
+}
 
 function getSettings(): { weights: { w1:number; w2:number; w3:number; w4:number; w5:number; w6:number }; threshold:number; cooldown:number; paperTradingEnabled:boolean } {
   try {
@@ -180,7 +187,9 @@ export const useDataStore = create<DataState>((set, get) => ({
     })()
     const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj, microDev, vpinAdj, detectorScore)
 
-    const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
+    const crossSpread = crossExchangePoller.getMaxSpread()
+    const crossSpreadPct = crossSpread.spread && t.price ? (crossSpread.spread / t.price) * 100 : 0
+    const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score, spreadPct: crossSpreadPct })
     // Extra VPIN toxicity filter: if Toxic and score <1.0, suppress
     const vpinToxicBlock = vpinLabel === 'Toxic' && Math.abs(score) < 1.0
     const shouldSuppress = !filter.pass || vpinToxicBlock
@@ -361,7 +370,9 @@ export const useDataStore = create<DataState>((set, get) => ({
     })()
     const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj, microDev, vpinAdj, detectorScore)
 
-    const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
+    const crossSpreadM = crossExchangePoller.getMaxSpread()
+    const crossSpreadPctM = crossSpreadM.spread && price ? (crossSpreadM.spread / price) * 100 : 0
+    const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score, spreadPct: crossSpreadPctM })
     const vpinToxicBlock = vpinLabel === 'Toxic' && Math.abs(score) < 1.0
     const shouldSuppress = !filter.pass || vpinToxicBlock
 
@@ -437,6 +448,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     detectorSuite.reset()
     tradePlanGenerator.reset()
     paperTradingEngine.reset()
+    crossExchangePoller.reset()
     engine.reset()
     globalTracker.clear()
     candles.length = 0
@@ -520,6 +532,7 @@ export const _internal = {
   detectorSuite,
   tradePlanGenerator,
   paperTradingEngine,
+  crossExchangePoller,
   engine,
   tracker: globalTracker,
   resetInternal() {
@@ -540,6 +553,7 @@ export const _internal = {
     detectorSuite.reset()
     tradePlanGenerator.reset()
     paperTradingEngine.reset()
+    crossExchangePoller.reset()
     engine.reset()
     globalTracker.clear()
     candles.length = 0
