@@ -45,9 +45,10 @@ export function RadarScreen() {
         <MeterBar label="VEL" value={metrics.velocityZ} displayValue={metrics.velocityZ.toFixed(2)} color="var(--violet)" />
         <MeterBar label="MIC" value={metrics.microDev} displayValue={metrics.microDev.toFixed(2)} color="var(--amber)" />
         <MeterBar label="VPIN" value={metrics.vpin*2 -1} displayValue={metrics.vpin.toFixed(2)} color={metrics.vpinLabel==='Toxic'?'var(--red)':metrics.vpinLabel==='Medium'?'var(--amber)':'var(--green)'} />
+        <MeterBar label="DET" value={(metrics as any).detectorScore ?? 0} displayValue={((metrics as any).detectorScore ?? 0).toFixed(2)} color="var(--green)" />
       </div>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>
-        MIC microprice sapması (-1..+1) • VPIN {metrics.vpinLabel} {metrics.vpin.toFixed(2)} (Toxic &gt;0.6)
+        MIC microprice sapması (-1..+1) • VPIN {metrics.vpinLabel} {metrics.vpin.toFixed(2)} (Toxic &gt;0.6) • DET {(metrics as any).detectorScore?.toFixed(2) ?? '0.00'}
       </div>
 
       <motion.div

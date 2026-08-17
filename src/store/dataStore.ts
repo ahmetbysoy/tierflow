@@ -61,21 +61,21 @@ const tradePlanGenerator = new TradePlanGenerator({ minRR: 2.5, kellyFraction: 0
 const paperTradingEngine = new PaperTradingEngine({ cooldownMs: 30000, maxPositions: 3, maxClosedHistory: 500, maxEquityLength: 300 })
 let spreadValue = 0
 
-function getSettings(): { weights: { w1:number; w2:number; w3:number; w4:number; w5:number }; threshold:number; cooldown:number; paperTradingEnabled:boolean } {
+function getSettings(): { weights: { w1:number; w2:number; w3:number; w4:number; w5:number; w6:number }; threshold:number; cooldown:number; paperTradingEnabled:boolean } {
   try {
     const raw = localStorage.getItem('signal-radar-settings')
     if (raw) {
       const parsed = JSON.parse(raw)
       const state = parsed.state ?? parsed
       return {
-        weights: state.weights ?? { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 },
+        weights: state.weights ?? { w1: 0.30, w2: 0.18, w3: 0.13, w4: 0.16, w5: 0.10, w6: 0.13 },
         threshold: state.threshold ?? 0.75,
         cooldown: state.cooldown ?? 18,
         paperTradingEnabled: state.paperTradingEnabled ?? false
       }
     }
   } catch {}
-  return { weights: { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 }, threshold: 0.75, cooldown: 18, paperTradingEnabled: false }
+  return { weights: { w1: 0.30, w2: 0.18, w3: 0.13, w4: 0.16, w5: 0.10, w6: 0.13 }, threshold: 0.75, cooldown: 18, paperTradingEnabled: false }
 }
 
 function updateCandle(price: number, ts: number) {
@@ -168,10 +168,17 @@ export const useDataStore = create<DataState>((set, get) => ({
     const velocityZ = calcVelocityZ(velocityHistory)
 
     const settings = getSettings()
-    const weights = normalizeWeights(settings.weights || { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 })
-    // VPIN directional adjustment: VPIN high adds in direction of CVD
-    const vpinAdj = (cvdZ >= 0 ? 1 : -1) * (vpinValue - 0.3) * 0.4 // -0.12 to +0.28 when VPIN 0..1
-    const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj, microDev, vpinAdj)
+    const weights = normalizeWeights(settings.weights || { w1: 0.30, w2: 0.18, w3: 0.13, w4: 0.16, w5: 0.10, w6: 0.13 })
+    // VPIN directional adjustment
+    const vpinAdj = (cvdZ >= 0 ? 1 : -1) * (vpinValue - 0.3) * 0.4
+    // DetectorSuite microScore (w6) - 9 dedektörün bull/bear toplamı
+    const detScoreRaw = tradePlanGenerator.scoreSignals()
+    const detectorScore = (() => {
+      const total = detScoreRaw.bull + detScoreRaw.bear + 1
+      const norm = (detScoreRaw.bull - detScoreRaw.bear) / 100 // -1..+1
+      return Math.max(-1, Math.min(1, norm))
+    })()
+    const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj, microDev, vpinAdj, detectorScore)
 
     const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
     // Extra VPIN toxicity filter: if Toxic and score <1.0, suppress
@@ -182,7 +189,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     let res = engine.tick({
       score,
       price: t.price,
-      breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ, micro: microDev, vpin: vpinValue },
+      breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ, micro: microDev, vpin: vpinValue, detector: detectorScore },
       weights,
       ts: t.ts
     })
@@ -261,10 +268,7 @@ export const useDataStore = create<DataState>((set, get) => ({
   },
 
   handleDepth: (d) => {
-    const raw = calcOBIRaw(d, 20)
-    obiValue = updateOBI(obiValue, raw, 0.2)
-
-    // OrderBook microprice
+    // OrderBookDiff tek OBI kaynağı (imbalance.ts'teki calcOBIRaw ikame)
     let micro: any = null
     try {
       orderBook.applyDiff({ bids: d.bids, asks: d.asks, eventTime: d.ts })
@@ -276,19 +280,27 @@ export const useDataStore = create<DataState>((set, get) => ({
         const spread = m.spread
         spreadValue = spread
         microDev = spread > 0 ? (m.microprice - mid) / (spread / 2) : 0
+        // Tek OBI kaynağı: OrderBookDiff (EMA ile yumuşat)
+        const raw = m.obi
+        obiValue = updateOBI(obiValue, raw, 0.2)
       }
     } catch {}
-    // Fallback direct calc if orderBook not ready
-    if (microPrice === 0 && d.bids.length && d.asks.length) {
+    // Fallback: orderBook henüz hazır değilse calcOBIRaw kullan (ilk snapshot öncesi)
+    if (!micro && d.bids.length && d.asks.length) {
+      const raw = calcOBIRaw(d, 20)
+      obiValue = updateOBI(obiValue, raw, 0.2)
       const { microprice, microDev: md } = computeMicroDev(d)
       microPrice = microprice
       microDev = md
       const spread = d.asks[0][0] - d.bids[0][0]
       spreadValue = spread
       micro = { obi: obiValue, bestBid: d.bids[0][0], bestAsk: d.asks[0][0], spread, mid: (d.bids[0][0] + d.asks[0][0]) / 2 }
-    } else if (micro) {
+    } else if (micro && microPrice === 0) {
+      // micro var ama microPrice henüz 0 ise fallback
       spreadValue = micro.spread
     }
+    // raw for metrics display (ham OBI)
+    const rawForMetrics = micro ? micro.obi : obiValue
 
     // DetectorSuite update (after recompute)
     try {
@@ -308,7 +320,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     if (now - lastThrottle < 100) return
     const s = get()
     set({
-      metrics: { ...s.metrics, obi: obiValue, obiRaw: raw, microprice: microPrice, microDev, vpin: vpinValue, vpinLabel },
+      metrics: { ...s.metrics, obi: obiValue, obiRaw: rawForMetrics, microprice: microPrice, microDev, vpin: vpinValue, vpinLabel },
       trackers: globalTracker.getAll(),
       stats: globalTracker.getStats(),
       flowCandles: flowEngine.getCandles()
@@ -337,16 +349,24 @@ export const useDataStore = create<DataState>((set, get) => ({
     const cvdZ = calcCVDZ(cvdNormHistory)
     const divergenceAdj = detectDivergence(priceHistory, cvdNormHistory, 20)
     const settings = getSettings()
-    const weights = normalizeWeights(settings.weights || { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 })
+    const weights = normalizeWeights(settings.weights || { w1: 0.30, w2: 0.18, w3: 0.13, w4: 0.16, w5: 0.10, w6: 0.13 })
+    // VPIN directional adjustment
     const vpinAdj = (cvdZ >= 0 ? 1 : -1) * (vpinValue - 0.3) * 0.4
-    const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj, microDev, vpinAdj)
+    // DetectorSuite microScore (w6) - 9 dedektörün bull/bear toplamı
+    const detScoreRaw = tradePlanGenerator.scoreSignals()
+    const detectorScore = (() => {
+      const total = detScoreRaw.bull + detScoreRaw.bear + 1
+      const norm = (detScoreRaw.bull - detScoreRaw.bear) / 100 // -1..+1
+      return Math.max(-1, Math.min(1, norm))
+    })()
+    const score = computeScore(cvdZ, obiValue, velocityZ, weights, divergenceAdj, microDev, vpinAdj, detectorScore)
 
     const filter = applyFilters({ priceHistory, cvdZ, obi: obiValue, velZ: velocityZ, score })
     const vpinToxicBlock = vpinLabel === 'Toxic' && Math.abs(score) < 1.0
     const shouldSuppress = !filter.pass || vpinToxicBlock
 
     engine.updateConfig({ threshold: settings.threshold ?? 0.75, cooldownMs: (settings.cooldown ?? 18) * 1000, hysteresis: 0.35 })
-    let res = engine.tick({ score, price, breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ, micro: microDev, vpin: vpinValue }, weights, ts })
+    let res = engine.tick({ score, price, breakdown: { cvd: cvdZ, obi: obiValue, vel: velocityZ, micro: microDev, vpin: vpinValue, detector: detectorScore }, weights, ts })
     if (shouldSuppress && res.signal) {
       res = { ...res, signal: null }
       if (res.state === 'ARMED' || res.state === 'FIRED') {
