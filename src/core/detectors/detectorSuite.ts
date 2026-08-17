@@ -469,7 +469,8 @@ export class DetectorSuite {
     const last = candles[candles.length - 1]
     const prev = candles[candles.length - 2]
 
-    // Delta expansion
+    // Delta expansion - tek divergence kaynağı artık cvd.ts'deki detectDivergence
+    // CVD divergence burada üretilmiyor, dataStore'daki detectDivergence tek kaynak (dedup)
     if (Math.abs(last.delta) > Math.abs(prev.delta) * 2 && last.activity > 100_000) {
       this.emitSignal({
         type: 'FLOW_DELTA_EXPANSION',
@@ -479,35 +480,6 @@ export class DetectorSuite {
         price: this.lastPrice,
         evidence: { delta: last.delta, pressure: last.pressureClose }
       })
-    }
-
-    // CVD divergence
-    if (candles.length >= 5) {
-      const cvdSlice = this.cvdHistory.slice(-10)
-      if (cvdSlice.length >= 5) {
-        const priceUp = last.priceClose > candles[candles.length - 5].priceClose
-        const cvdDown = cvdSlice[cvdSlice.length - 1].value < cvdSlice[cvdSlice.length - 5].value
-
-        if (priceUp && cvdDown) {
-          this.emitSignal({
-            type: 'CVD_BEARISH_DIVERGENCE',
-            bias: 'bearish',
-            confidence: 70,
-            description: 'CVD bearish divergence: fiyat yükselirken delta düşüyor',
-            price: this.lastPrice,
-            evidence: {}
-          })
-        } else if (!priceUp && !cvdDown) {
-          this.emitSignal({
-            type: 'CVD_BULLISH_DIVERGENCE',
-            bias: 'bullish',
-            confidence: 70,
-            description: 'CVD bullish divergence: fiyat düşerken delta yükseliyor',
-            price: this.lastPrice,
-            evidence: {}
-          })
-        }
-      }
     }
   }
 

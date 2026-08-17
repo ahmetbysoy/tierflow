@@ -23,7 +23,6 @@ export interface AggregatorWeights {
 }
 
 export function computeDetectorScore(bull: number, bear: number): number {
-  const total = bull + bear + 1
   const norm = (bull - bear) / 100 // -1..+1, 100 = 50+50
   return Math.max(-1, Math.min(1, norm))
 }
