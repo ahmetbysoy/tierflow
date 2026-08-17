@@ -25,7 +25,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
       source: 'okx',
-      symbol: 'BTC-USDT',
+      symbol: 'BTCUSDT',
       weights: { w1: 0.30, w2: 0.18, w3: 0.13, w4: 0.16, w5: 0.10, w6: 0.13 },
       threshold: 0.75,
       cooldown: 18,
@@ -49,7 +49,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'signal-radar-settings',
-      version: 6,
+      version: 7,
       migrate: (persistedState: any, version: number) => {
         if (version < 4) {
           // v4: 5-weight microprice+VPIN
@@ -91,6 +91,17 @@ export const useSettingsStore = create<SettingsState>()(
               w5: (w.w5||0.12)/sum5*0.87,
               w6: 0.13
             }
+          }
+        }
+        if (version < 7) {
+          // v7: futures only, symbol normalize BTC-USDT -> BTCUSDT
+          const oldSym = persistedState.symbol || 'BTCUSDT'
+          const clean = String(oldSym).toUpperCase().replace(/[^A-Z0-9]/g, '')
+          const base = clean.endsWith('USDT') ? clean.slice(0, -4) : clean
+          const norm = base ? `${base}USDT` : 'BTCUSDT'
+          return {
+            ...persistedState,
+            symbol: norm
           }
         }
         return persistedState as any

@@ -10,6 +10,7 @@ import { useSettingsStore } from '../store/settingsStore'
 import { useDataStore } from '../store/dataStore'
 import { WsManager } from '../core/ws/wsManager'
 import { playBuy, playSell, playDisconnect } from '../core/audio/sound'
+import { _internal as dataInternal } from '../store/dataStore'
 import '../styles/global.css'
 
 export default function App() {
@@ -18,6 +19,8 @@ export default function App() {
   const [connection, setConnection] = useState<'connected' | 'connecting' | 'disconnected'>('connecting')
 
   useEffect(() => {
+    // Coin değişince eski verileri temizle
+    useDataStore.getState().reset()
     const mgr = new WsManager((ev) => {
       if (ev.type === 'status') {
         setConnection(ev.status as any)
@@ -32,6 +35,16 @@ export default function App() {
     return () => mgr.disconnect()
     // Reconnect when source/symbol changes - create new manager
   }, [source, symbol])
+
+  useEffect(() => {
+    // Futures coin değişince CrossExchange poller'ı da yeni sembole bağla
+    try {
+      const clean = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const base = clean.endsWith('USDT') ? clean.slice(0, -4) : clean
+      const futuresSym = base ? `${base}USDT` : 'BTCUSDT'
+      ;(dataInternal as any).crossExchangePoller?.start(futuresSym)
+    } catch {}
+  }, [symbol])
 
   // Expose for Playwright debug
   useEffect(() => {

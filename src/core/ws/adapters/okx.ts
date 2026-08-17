@@ -26,12 +26,10 @@ export class OkxAdapter implements WsAdapter {
   }
 
   connect(symbol: string): void {
-    this.symbol = symbol.includes('-') ? symbol : symbol.replace('USDT', '-USDT').replace('BTC-', 'BTC-')
-    // Ensure format BTC-USDT, ETH-USDT, BTC-USDT-SWAP? OKX uses BTC-USDT
-    if (!this.symbol.includes('-')) {
-      // fallback: insert -
-      this.symbol = this.symbol.slice(0, -4) + '-' + this.symbol.slice(-4)
-    }
+    // Futures only: BTCUSDT -> BTC-USDT-SWAP, BTC-USDT -> BTC-USDT-SWAP
+    const clean = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const base = clean.endsWith('USDT') ? clean.slice(0, -4) : clean
+    this.symbol = `${base}-USDT-SWAP`
     this.disconnect()
     this.localBids.clear()
     this.localAsks.clear()

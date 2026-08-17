@@ -1,6 +1,19 @@
 import { useSettingsStore } from '../../store/settingsStore'
 import { useDataStore } from '../../store/dataStore'
 import { playBuy, playSell } from '../../core/audio/sound'
+import { useState, useMemo } from 'react'
+
+const FUTURES_COINS = [
+  'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','MATICUSDT','LINKUSDT','LTCUSDT','BCHUSDT','ETCUSDT','FILUSDT','ARBUSDT','OPUSDT','SUIUSDT','APTUSDT','PEPEUSDT','SHIBUSDT','TRBUSDT','BLZUSDT','WIFUSDT','ENAUSDT','TAOUSDT','NEARUSDT','UNIUSDT','ATOMUSDT','ETCUSDT','XLMUSDT','VETUSDT','ICPUSDT','FETUSDT','RNDRUSDT','INJUSDT','SEIUSDT','TIAUSDT','JUPUSDT','PYTHUSDT','BONKUSDT','FLOKIUSDT','MEMEUSDT','ORDIUSDT','1000PEPEUSDT','1000SHIBUSDT'
+]
+
+function normalizeFuturesSymbol(input: string): string {
+  let s = input.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (!s) return ''
+  if (!s.endsWith('USDT')) s = s.replace(/USDT$/, '') + 'USDT'
+  // Remove dash already done, keep USDT
+  return s
+}
 
 export function SettingsScreen() {
   const {
@@ -19,6 +32,33 @@ export function SettingsScreen() {
     setSound,
     setHaptics
   } = useSettingsStore()
+
+  const [coinInput, setCoinInput] = useState(symbol.replace('-',''))
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  const filteredCoins = useMemo(() => {
+    const q = coinInput.toUpperCase()
+    if (!q) return FUTURES_COINS.slice(0, 8)
+    return FUTURES_COINS.filter(c => c.includes(q)).slice(0, 8)
+  }, [coinInput])
+
+  const handleSelectCoin = (coin: string) => {
+    const norm = normalizeFuturesSymbol(coin)
+    setCoinInput(norm)
+    setShowDropdown(false)
+    if (norm && norm !== symbol.replace('-','')) {
+      // Eski verileri temizle ve yeni coine bağlan
+      useDataStore.getState().reset()
+      // Symbol'ü futures formatında kaydet (BTCUSDT)
+      setSymbol(norm)
+    }
+  }
+
+  const handleCustomCoinSubmit = () => {
+    const norm = normalizeFuturesSymbol(coinInput)
+    if (!norm) return
+    handleSelectCoin(norm)
+  }
 
   const handleWeight = (k: 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6', v: number) => {
     const nw = { ...weights, [k]: v }
@@ -59,26 +99,95 @@ export function SettingsScreen() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}>SEMBOL</label>
-        <select
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          style={{
-            padding: '10px 12px',
-            borderRadius: 12,
-            border: '1px solid var(--border)',
-            background: 'var(--surface-2)',
-            color: 'var(--text)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12
-          }}
-        >
-          <option value="BTC-USDT">BTC-USDT</option>
-          <option value="ETH-USDT">ETH-USDT</option>
-          <option value="SOL-USDT">SOL-USDT</option>
-          <option value="BLZ-USDT">BLZ-USDT (test)</option>
-          <option value="TRB-USDT">TRB-USDT (test)</option>
-        </select>
+        <label style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}>FUTURES COIN SEÇ (spot yok)</label>
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={coinInput}
+              onChange={(e) => { setCoinInput(e.target.value.toUpperCase()); setShowDropdown(true) }}
+              onFocus={() => setShowDropdown(true)}
+              onBlur={() => setTimeout(()=>setShowDropdown(false), 150)}
+              onKeyDown={(e) => { if (e.key==='Enter') handleCustomCoinSubmit() }}
+              placeholder="BTCUSDT, PEPEUSDT..."
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid var(--border)',
+                background: 'var(--surface-2)',
+                color: 'var(--text)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12,
+                outline: 'none'
+              }}
+            />
+            <button
+              onClick={handleCustomCoinSubmit}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 12,
+                border: '1px solid var(--cyan)',
+                background: 'rgba(34,211,238,0.12)',
+                color: 'var(--cyan)',
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: 'pointer'
+              }}
+            >
+              Seç
+            </button>
+          </div>
+          {showDropdown && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              marginTop: 6,
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              overflow: 'hidden',
+              zIndex: 10,
+              maxHeight: 200,
+              overflowY: 'auto'
+            }}>
+              {filteredCoins.map(c => (
+                <button
+                  key={c}
+                  onMouseDown={() => handleSelectCoin(c)}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    background: c === normalizeFuturesSymbol(coinInput) ? 'rgba(34,211,238,0.1)' : 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid var(--border)',
+                    color: c === symbol.replace('-','') ? 'var(--cyan)' : 'var(--text)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontWeight: c === symbol.replace('-','') ? 700 : 400
+                  }}
+                >
+                  {c} {c === symbol.replace('-','') ? '• aktif' : ''}
+                </button>
+              ))}
+              {filteredCoins.length===0 && (
+                <div style={{ padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}>
+                  "{coinInput.toUpperCase()}" için sonuç yok — Enter ile "{normalizeFuturesSymbol(coinInput)}" olarak ekle
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)' }}>
+          Sadece futures (BTCUSDT, ETHUSDT...). Coin değiştirince eski veriler silinir, yeni coine WS yeniden bağlanır. SPOT yok.
+        </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--cyan)' }}>
+          Aktif: <b>{symbol}</b> → {source==='okx' ? symbol.replace('USDT','-USDT-SWAP') : symbol} ({source})
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
