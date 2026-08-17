@@ -18,6 +18,8 @@ export interface WallTrack {
   firstSeen: number
   lastSeen: number
   persistence: number
+  refreshCount: number
+  lastQty: number
 }
 
 export interface DetectorState {
@@ -190,12 +192,16 @@ export class DetectorSuite {
         let w = list.find(x => x.key === key)
 
         if (!w) {
-          w = { key, price: lv.price, qty: lv.qty, notional: lv.notional, firstSeen: nowTs, lastSeen: nowTs, persistence: 1 }
+          w = { key, price: lv.price, qty: lv.qty, notional: lv.notional, firstSeen: nowTs, lastSeen: nowTs, persistence: 1, refreshCount: 0, lastQty: lv.qty }
           list.push(w)
         } else {
+          if (w.qty !== lv.qty) {
+            w.refreshCount = (w.refreshCount || 0) + 1
+          }
           w.qty = lv.qty
           w.notional = lv.notional
           w.lastSeen = nowTs
+          w.lastQty = lv.qty
           w.persistence += 1
         }
 
@@ -372,6 +378,10 @@ export class DetectorSuite {
         : 0
       if (priceDist > 0.0015) continue
 
+      const ageSec = (nowTs - w.firstSeen) / 1000
+      const refreshRate = ageSec > 0 ? ((w as any).refreshCount || 0) / ageSec : 0
+      const isHighRefresh = refreshRate > 1.5
+
       const pull = nowTs - w.lastSeen > 700 && w.persistence < 3
       if (pull && w.notional > 50_000) {
         this.emitSignal({
@@ -380,7 +390,18 @@ export class DetectorSuite {
           confidence: 83,
           description: `Şüpheli spoof duvarı @ ${fmtPrice(w.price)}`,
           price: w.price,
-          evidence: { persistence: w.persistence, notional: w.notional }
+          evidence: { persistence: w.persistence, notional: w.notional, refreshRate, refreshCount: (w as any).refreshCount }
+        })
+      }
+      // Yeni: yüksek refresh rate spoof - hızlı ekle-çek döngüsü
+      if (isHighRefresh && w.notional > 30_000) {
+        this.emitSignal({
+          type: 'HIGH_REFRESH_SPOOF',
+          bias: w.key.includes('bid') ? 'bearish' : 'bullish',
+          confidence: clamp(70 + refreshRate * 8, 70, 92),
+          description: `Yüksek refresh spoof @ ${fmtPrice(w.price)} — ${refreshRate.toFixed(1)}/s qty değişimi`,
+          price: w.price,
+          evidence: { refreshRate, refreshCount: (w as any).refreshCount, persistence: w.persistence, notional: w.notional }
         })
       }
     }
