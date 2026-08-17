@@ -31,6 +31,7 @@ export interface DetectorState {
 
 export interface DetectorConfig {
   wallMultiplier: number
+  wallNotionalMultiplier: number
   minConfidence: number
   spoofWindowSec: number
 }
@@ -102,6 +103,7 @@ export class DetectorSuite {
   constructor(config?: Partial<DetectorConfig>) {
     this.config = {
       wallMultiplier: 3.0,
+      wallNotionalMultiplier: 3.0,
       minConfidence: 60,
       spoofWindowSec: 3,
       ...config
@@ -172,8 +174,11 @@ export class DetectorSuite {
     if (bids.length < 5 || asks.length < 5) return
 
     const mult = this.config.wallMultiplier
+    const notionalMult = this.config.wallNotionalMultiplier
     const avgBid = median(bids.map(x => x.qty))
     const avgAsk = median(asks.map(x => x.qty))
+    const medianNotional = median([...bids, ...asks].map(x => x.notional))
+    const notionalThreshold = Math.max(5_000, medianNotional * notionalMult)
     const nowTs = Date.now()
 
     const scan = (levels: BookLevel[], side: 'bid' | 'ask', avg: number): void => {
@@ -201,7 +206,7 @@ export class DetectorSuite {
           95
         )
 
-        if (lv.notional > 100_000 && confidence >= this.config.minConfidence) {
+        if (lv.notional > notionalThreshold && confidence >= this.config.minConfidence) {
           this.emitSignal({
             type: side === 'bid' ? 'STRONG_BID_WALL' : 'STRONG_ASK_WALL',
             bias: side === 'bid' ? 'bullish' : 'bearish',
