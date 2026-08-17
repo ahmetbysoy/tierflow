@@ -85,6 +85,18 @@ function fmtNotional(n: number): string {
   return n.toFixed(0)
 }
 
+function priceToKey(p: number): string {
+  if (!isFinite(p)) return String(p)
+  if (p >= 1000) return p.toFixed(2)
+  if (p >= 10) return p.toFixed(3)
+  if (p >= 1) return p.toFixed(4)
+  if (p >= 0.1) return p.toFixed(5)
+  if (p >= 0.01) return p.toFixed(6)
+  if (p >= 0.001) return p.toFixed(7)
+  if (p >= 0.0001) return p.toFixed(8)
+  return p.toFixed(10)
+}
+
 // ── DetectorSuite ─────────────────────────────────────────
 
 export class DetectorSuite {
@@ -413,7 +425,7 @@ export class DetectorSuite {
     const levels = new Map<string, { price: number; tradeNotional: number; count: number }>()
 
     for (const t of recentTrades) {
-      const k = t.price.toFixed(2)
+      const k = priceToKey(t.price)
       if (!levels.has(k)) {
         levels.set(k, { price: t.price, tradeNotional: 0, count: 0 })
       }
@@ -424,7 +436,7 @@ export class DetectorSuite {
 
     for (const [k, x] of levels) {
       const depthAt = [...this.book!.bids, ...this.book!.asks].find(
-        l => l.price.toFixed(2) === k
+        l => priceToKey(l.price) === k
       )
       if (!depthAt) continue
 
