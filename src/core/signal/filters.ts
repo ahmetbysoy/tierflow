@@ -1,12 +1,25 @@
 /**
- * Signal Filters - canlı takip debug sonrası patchler (v4 - 5dk canlı sonrası)
- * - Yatay piyasa filtresi: fiyat range < %0.02 ise sinyal baskıla (0.03->0.02, 60s pencerede $12.5 BTC)
- *   screenshot %0.00016 hala blok, ama $15 range (%0.024) artık geçer (önceki 0.03'te bloktu, 5dk'da 0 sinyal veriyordu)
+ * Signal Filters - canlı takip debug sonrası patchler (v4 - 5dk canlı sonrası + ATR dinamik)
+ * - Yatay piyasa filtresi: fiyat range < %dinamik ise sinyal baskıla (base 0.02, ATR'ye göre 0.02-0.15)
+ *   BTC'de 0.02, küçük cap yüksek vol'de 0.10+ oto (DetectorSuite bağlanınca daha anlamlı)
  * - OBI confluence: |OBI| < 0.06 ise baskıla
  * - 2/3 onay: en az 2 indikatör aynı yönde ve |z|>0.30
  */
 
-export function isFlatMarket(priceHistory: { price: number; ts: number }[], windowMs = 60000, thresholdPct = 0.02): boolean {
+function mean(arr: number[]): number {
+  return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0
+}
+function std(arr: number[]): number {
+  if (arr.length < 2) return 0
+  const m = mean(arr)
+  const v = arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length
+  return Math.sqrt(v)
+}
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v))
+}
+
+export function isFlatMarket(priceHistory: { price: number; ts: number }[], windowMs = 60000, baseThresholdPct = 0.02): boolean {
   if (priceHistory.length < 10) return false
   const now = Date.now()
   const cutoff = now - windowMs
@@ -18,7 +31,10 @@ export function isFlatMarket(priceHistory: { price: number; ts: number }[], wind
   const mid = (max + min) / 2
   if (mid === 0) return true
   const rangePct = ((max - min) / mid) * 100
-  return rangePct < thresholdPct
+  // ATR/volatiliteye göre dinamik eşik: vol yüksekse flat eşiği de yükselir
+  const volPct = mid ? (std(prices) / mid) * 100 : 0
+  const dynamicThreshold = clamp(Math.max(baseThresholdPct, volPct * 1.2), 0.02, 0.15)
+  return rangePct < dynamicThreshold
 }
 
 export function hasOBIConfluence(obi: number, minAbs = 0.06): boolean {
@@ -53,7 +69,7 @@ export function applyFilters(params: {
   score: number
 }): FilterResult {
   if (isFlatMarket(params.priceHistory, 60000, 0.02)) {
-    return { pass: false, reason: 'Flat market - range <0.02%' }
+    return { pass: false, reason: 'Flat market - range < dinamik eşik (ATR)' }
   }
   if (!hasOBIConfluence(params.obi, 0.06)) {
     return { pass: false, reason: `OBI too weak |OBI|=${params.obi.toFixed(2)} <0.06` }
