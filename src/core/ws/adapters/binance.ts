@@ -47,8 +47,11 @@ export class BinanceAdapter implements WsAdapter {
         const data = msg.data
         if (!stream || !data) return
         if (stream.includes('@aggTrade')) {
+          const priceStr: string = data.p
+          const priceNum = Number(priceStr)
           const trade: NormalizedTrade = {
-            price: parseFloat(data.p),
+            price: priceNum,
+            priceStr,
             qty: parseFloat(data.q),
             side: data.m ? 'sell' : 'buy', // m = isBuyerMaker -> sell
             ts: data.T
@@ -62,7 +65,8 @@ export class BinanceAdapter implements WsAdapter {
           }
           this.cb?.({ type: 'depth', data: depth })
         } else if (stream.includes('@markPrice')) {
-          const mark = { price: parseFloat(data.p), ts: data.E }
+          const priceStr: string = data.p
+          const mark = { price: Number(priceStr), priceStr, ts: data.E }
           this.cb?.({ type: 'mark', data: mark })
         }
       } catch {}

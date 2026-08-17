@@ -21,6 +21,7 @@ import type { MicroSignal, TradePlan } from '../core/signal/tradePlan'
 
 interface DataState {
   price: number
+  priceStr: string
   metrics: Metrics
   engineState: 'IDLE' | 'ARMED' | 'FIRED' | 'COOLDOWN'
   signals: Signal[]
@@ -34,7 +35,7 @@ interface DataState {
   stats: ReturnType<typeof globalTracker.getStats>
   handleTrade: (t: NormalizedTrade) => void
   handleDepth: (d: NormalizedDepth) => void
-  handleMark: (price: number, ts: number) => void
+  handleMark: (price: number, ts: number, priceStr?: string) => void
   reset: () => void
 }
 
@@ -122,7 +123,8 @@ function computeMicroDev(depth: NormalizedDepth): { microprice: number; microDev
 
 export const useDataStore = create<DataState>((set, get) => ({
   price: 0,
-  metrics: { cvd: 0, cvdNorm: 0, cvdZ: 0, obi: 0, obiRaw: 0, velocity: 0, velocityZ: 0, microprice: 0, microDev: 0, vpin: 0, vpinLabel: 'Low', score: 0, price: 0 },
+  priceStr: "",
+  metrics: { cvd: 0, cvdNorm: 0, cvdZ: 0, obi: 0, obiRaw: 0, velocity: 0, velocityZ: 0, microprice: 0, microDev: 0, vpin: 0, vpinLabel: 'Low', score: 0, price: 0, priceStr: "" },
   engineState: 'IDLE',
   signals: [],
   detectorSignals: [],
@@ -136,6 +138,7 @@ export const useDataStore = create<DataState>((set, get) => ({
 
   handleTrade: (t) => {
     const now = Date.now()
+    const priceStr = (t as any).priceStr || String(t.price)
     globalTracker.updatePrice(t.price, t.ts)
 
     // VPIN update
@@ -153,7 +156,7 @@ export const useDataStore = create<DataState>((set, get) => ({
       priceHistory.push({ price: t.price, ts: t.ts })
       if (priceHistory.length > 500) priceHistory.shift()
       updateCandle(t.price, t.ts)
-      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price: t.price, lastUpdate: t.ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price: t.price }, flowCandles: flowEngine.getCandles() })
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price: t.price, priceStr, lastUpdate: t.ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price: t.price, priceStr }, flowCandles: flowEngine.getCandles() })
       return
     }
     lastThrottle = now
@@ -218,13 +221,15 @@ export const useDataStore = create<DataState>((set, get) => ({
       vpin: vpinValue,
       vpinLabel,
       score,
-      price: t.price
+      price: t.price,
+      priceStr
     }
 
     const allCandles = currentCandle ? [...candles, currentCandle] : [...candles]
 
     set({
       price: t.price,
+      priceStr,
       metrics,
       engineState: res.state,
       lastUpdate: t.ts,
@@ -236,12 +241,13 @@ export const useDataStore = create<DataState>((set, get) => ({
     })
 
     if (res.signal) {
-      globalTracker.addSignal(res.signal)
+      const sigWithStr = { ...res.signal, priceStr } as any
+      globalTracker.addSignal(sigWithStr)
       set((s) => {
-        const next = [res.signal!, ...s.signals].slice(0, 200)
+        const next = [sigWithStr, ...s.signals].slice(0, 200)
         return { signals: next, trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() }
       })
-      window.dispatchEvent(new CustomEvent('signal-fired', { detail: res.signal }))
+      window.dispatchEvent(new CustomEvent('signal-fired', { detail: sigWithStr }))
     } else {
       set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() })
     }
@@ -339,14 +345,15 @@ export const useDataStore = create<DataState>((set, get) => ({
     })
   },
 
-  handleMark: (price, ts) => {
+  handleMark: (price, ts, priceStr) => {
+    const markPriceStr = priceStr || String(price)
     globalTracker.updatePrice(price, ts)
     priceHistory.push({ price, ts })
     if (priceHistory.length > 500) priceHistory.shift()
     updateCandle(price, ts)
     const now = Date.now()
     if (now - lastThrottle < 100) {
-      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price, lastUpdate: ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price }, flowCandles: flowEngine.getCandles() })
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price, priceStr: markPriceStr, lastUpdate: ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price, priceStr: markPriceStr }, flowCandles: flowEngine.getCandles() })
       return
     }
     lastThrottle = now
@@ -396,13 +403,15 @@ export const useDataStore = create<DataState>((set, get) => ({
       vpin: vpinValue,
       vpinLabel,
       score,
-      price
+      price,
+      priceStr: markPriceStr
     }
 
     const allCandles = currentCandle ? [...candles, currentCandle] : [...candles]
 
     set({
       price,
+      priceStr: markPriceStr,
       metrics,
       engineState: res.state,
       lastUpdate: ts,
@@ -413,9 +422,11 @@ export const useDataStore = create<DataState>((set, get) => ({
     })
 
     if (res.signal) {
-      globalTracker.addSignal(res.signal)
-      set((s) => ({ signals: [res.signal!, ...s.signals].slice(0, 200), trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() }))
-      window.dispatchEvent(new CustomEvent('signal-fired', { detail: res.signal }))
+      // Signal priceStr should be markPriceStr
+      const sigWithStr = { ...res.signal, priceStr: markPriceStr }
+      globalTracker.addSignal(sigWithStr as any)
+      set((s) => ({ signals: [sigWithStr as any, ...s.signals].slice(0, 200), trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() }))
+      window.dispatchEvent(new CustomEvent('signal-fired', { detail: sigWithStr }))
     } else {
       set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() })
     }
@@ -453,7 +464,8 @@ export const useDataStore = create<DataState>((set, get) => ({
     currentCandle = null
     set({
       price: 0,
-      metrics: { cvd: 0, cvdNorm: 0, cvdZ: 0, obi: 0, obiRaw: 0, velocity: 0, velocityZ: 0, microprice: 0, microDev: 0, vpin: 0, vpinLabel: 'Low', score: 0, price: 0 },
+      priceStr: "",
+      metrics: { cvd: 0, cvdNorm: 0, cvdZ: 0, obi: 0, obiRaw: 0, velocity: 0, velocityZ: 0, microprice: 0, microDev: 0, vpin: 0, vpinLabel: 'Low', score: 0, price: 0, priceStr: "" },
       engineState: 'IDLE',
       signals: [],
       detectorSignals: [],

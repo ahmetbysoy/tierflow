@@ -101,7 +101,7 @@ export function SignalsScreen() {
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}>{new Date(s.ts).toLocaleTimeString()}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-              <span style={{ color: 'var(--text)' }}>${s.price.toFixed(2)}</span>
+              <span style={{ color: 'var(--text)' }}>${(s as any).priceStr || s.price}</span>
               <span style={{ color: 'var(--muted)' }}>Skor {s.score.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -6,6 +6,7 @@ import type { ConnectionState } from '../../types'
 
 export function Header({ connection, onToggleSound }: { connection: ConnectionState; onToggleSound: () => void }) {
   const price = useDataStore((s) => s.price)
+  const priceStr = useDataStore((s) => s.priceStr)
   const symbol = useSettingsStore((s) => s.symbol)
   const sound = useSettingsStore((s) => s.sound)
 
@@ -56,7 +57,7 @@ export function Header({ connection, onToggleSound }: { connection: ConnectionSt
         </div>
       </div>
 
-      <PriceTicker price={price} symbol={symbol} />
+      <PriceTicker price={price} priceStr={priceStr} symbol={symbol} />
 
       <button
         onClick={onToggleSound}

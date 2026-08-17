@@ -66,8 +66,10 @@ export class OkxAdapter implements WsAdapter {
         if (channel === 'trades') {
           for (const t of msg.data) {
             // OKX trade: { px, sz, side: buy/sell, ts }
+            const priceStr: string = t.px
             const trade: NormalizedTrade = {
-              price: parseFloat(t.px),
+              price: Number(priceStr),
+              priceStr,
               qty: parseFloat(t.sz),
               side: t.side === 'buy' ? 'buy' : 'sell',
               ts: Number(t.ts)
@@ -136,7 +138,8 @@ export class OkxAdapter implements WsAdapter {
           }
         } else if (channel === 'tickers') {
           for (const tk of msg.data) {
-            const mark = { price: parseFloat(tk.last), ts: Number(tk.ts) }
+            const priceStr: string = tk.last
+            const mark = { price: Number(priceStr), priceStr, ts: Number(tk.ts) }
             this.cb?.({ type: 'mark', data: mark })
             // Also treat as price update via mark
           }

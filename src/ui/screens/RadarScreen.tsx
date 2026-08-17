@@ -71,7 +71,7 @@ export function RadarScreen() {
         <div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)', letterSpacing: 0.5 }}>SON SİNYAL</div>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: lastSignal ? (lastSignal.side === 'BUY' ? 'var(--green)' : 'var(--red)') : 'var(--muted)' }}>
-            {lastSignal ? `${lastSignal.side} • ${lastSignal.confidence}% • $${lastSignal.price.toFixed(2)}` : 'Henüz sinyal yok — radar tarıyor...'}
+            {lastSignal ? `${lastSignal.side} • ${lastSignal.confidence}% • $${(lastSignal as any).priceStr || lastSignal.price}` : 'Henüz sinyal yok — radar tarıyor...'}
           </div>
           {lastSignal && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>

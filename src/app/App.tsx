@@ -29,7 +29,7 @@ export default function App() {
       }
       if (ev.type === 'trade') useDataStore.getState().handleTrade(ev.data)
       if (ev.type === 'depth') useDataStore.getState().handleDepth(ev.data)
-      if (ev.type === 'mark') useDataStore.getState().handleMark(ev.data.price, ev.data.ts)
+      if (ev.type === 'mark') useDataStore.getState().handleMark(ev.data.price, ev.data.ts, (ev.data as any).priceStr)
     })
     mgr.connect(source, symbol)
     return () => mgr.disconnect()
