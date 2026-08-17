@@ -76,18 +76,25 @@ export default function App() {
   }, [sound, haptics])
 
   return (
-    <div className="phone-canvas">
-      <Header connection={connection} onToggleSound={() => useSettingsStore.getState().setSound(!sound)} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
-        {tab === 'radar' && <RadarScreen />}
-        {tab === 'chart' && <ChartScreen />}
-        {tab === 'signals' && <SignalsScreen />}
-        {tab === 'settings' && <SettingsScreen />}
+    <>
+      <div className="pastel-bg">
+        <div className="pastel-blob pastel-blob-1" />
+        <div className="pastel-blob pastel-blob-2" />
+        <div className="pastel-blob pastel-blob-3" />
       </div>
-      <TabBar />
-      <div style={{ padding: '6px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
-        ⚠️ Eğlence ve eğitim amaçlıdır, yatırım tavsiyesi değildir. • Signal Radar v1.0
+      <div className="phone-canvas">
+        <Header connection={connection} onToggleSound={() => useSettingsStore.getState().setSound(!sound)} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
+          {tab === 'radar' && <RadarScreen />}
+          {tab === 'chart' && <ChartScreen />}
+          {tab === 'signals' && <SignalsScreen />}
+          {tab === 'settings' && <SettingsScreen />}
+        </div>
+        <TabBar />
+        <div style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'Fredoka, var(--font-mono)', fontSize: 10, color: 'var(--muted)', borderTop: '1px solid var(--border-soft)', background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
+          ✨ Eğlence ve eğitim amaçlıdır, yatırım tavsiyesi değildir ✨ • Signal Radar v1.1
+        </div>
       </div>
-    </div>
+    </>
   )
 }

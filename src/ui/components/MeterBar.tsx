@@ -16,9 +16,10 @@ export function MeterBar({ label, value, displayValue, color }: Props) {
       <div style={{
         width: 44,
         height: 120,
-        background: 'var(--surface-2)',
-        borderRadius: 12,
-        border: '1px solid var(--border)',
+        background: 'rgba(255,255,255,0.9)',
+        borderRadius: 16,
+        border: '1px solid var(--border-soft)',
+        boxShadow: '0 4px 12px rgba(167,139,250,0.08)',
         position: 'relative',
         overflow: 'hidden',
         display: 'flex',
@@ -33,10 +34,11 @@ export function MeterBar({ label, value, displayValue, color }: Props) {
           width: '100%',
           height: `${pct}%`,
           maxHeight: '100%',
-          background: isPositive ? color : isNegative ? 'var(--red)' : 'var(--muted)',
-          borderRadius: 8,
+          background: isPositive ? color : isNegative ? 'var(--red)' : 'var(--purple-soft)',
+          borderRadius: 10,
           opacity: 0.9,
-          transition: 'height 0.2s ease, background 0.2s ease',
+          transition: 'height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease',
+          animation: Math.abs(value) > 0.8 ? 'jelly 0.6s ease' : undefined,
           boxShadow: Math.abs(value) > 1 ? `0 0 12px ${color}60` : 'none'
         }} />
         {/* value indicator dot at current level */}

@@ -41,17 +41,18 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
 
       ctx.clearRect(0, 0, size, size)
 
-      // background
+      // background pastel donut
       const bg = ctx.createRadialGradient(center, center, 20, center, center, radius)
-      bg.addColorStop(0, '#0F1626')
-      bg.addColorStop(1, '#070B14')
+      bg.addColorStop(0, '#FFFFFF')
+      bg.addColorStop(0.5, '#FFF0F5')
+      bg.addColorStop(1, '#E9D5FF')
       ctx.fillStyle = bg
       ctx.beginPath()
       ctx.arc(center, center, radius, 0, Math.PI * 2)
       ctx.fill()
 
-      // grid circles
-      ctx.strokeStyle = 'rgba(30,42,68,0.8)'
+      // grid pastel
+      ctx.strokeStyle = 'rgba(167,139,250,0.25)'
       ctx.lineWidth = 1
       for (let r = 30; r <= radius; r += 30) {
         ctx.beginPath()
@@ -68,12 +69,12 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
 
       // threshold arcs
       const threshAngle = (0.6 / 3) * 135
-      ctx.strokeStyle = 'rgba(52,211,153,0.35)'
+      ctx.strokeStyle = 'rgba(255,143,171,0.45)'
       ctx.lineWidth = 3
       ctx.beginPath()
       ctx.arc(center, center, radius - 6, ((-threshAngle - 90) * Math.PI) / 180, ((135 - 90) * Math.PI) / 180)
       ctx.stroke()
-      ctx.strokeStyle = 'rgba(248,113,113,0.35)'
+      ctx.strokeStyle = 'rgba(167,139,250,0.45)'
       ctx.beginPath()
       ctx.arc(center, center, radius - 6, ((-135 - 90) * Math.PI) / 180, ((threshAngle - 90) * Math.PI) / 180)
       ctx.stroke()
@@ -81,10 +82,10 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
       // conic sweep
       const sweep = angleRef.current
       const grad = ctx.createConicGradient((sweep * Math.PI) / 180, center, center)
-      grad.addColorStop(0, 'rgba(34,211,238,0)')
-      grad.addColorStop(0.85, 'rgba(34,211,238,0)')
-      grad.addColorStop(0.95, 'rgba(34,211,238,0.25)')
-      grad.addColorStop(1, 'rgba(34,211,238,0.6)')
+      grad.addColorStop(0, 'rgba(255,143,171,0)')
+      grad.addColorStop(0.85, 'rgba(255,143,171,0)')
+      grad.addColorStop(0.95, 'rgba(167,139,250,0.25)')
+      grad.addColorStop(1, 'rgba(167,139,250,0.5)')
       ctx.fillStyle = grad
       ctx.beginPath()
       ctx.arc(center, center, radius, 0, Math.PI * 2)
@@ -92,7 +93,7 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
 
       // sweep line
       const rad = (sweep - 90) * (Math.PI / 180)
-      ctx.strokeStyle = 'rgba(34,211,238,0.9)'
+      ctx.strokeStyle = 'rgba(167,139,250,0.9)'
       ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.moveTo(center, center)
@@ -101,7 +102,7 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
 
       // needle (score)
       const needleRad = (needleAngle - 90) * (Math.PI / 180)
-      ctx.strokeStyle = side === 'BUY' ? '#34D399' : side === 'SELL' ? '#F87171' : '#7C8DB0'
+      ctx.strokeStyle = side === 'BUY' ? '#FF8FAB' : side === 'SELL' ? '#A78BFA' : '#9B8CB5'
       ctx.lineWidth = 3
       ctx.lineCap = 'round'
       ctx.beginPath()
@@ -109,13 +110,13 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
       ctx.lineTo(center + Math.cos(needleRad) * (radius - 18), center + Math.sin(needleRad) * (radius - 18))
       ctx.stroke()
       // center dot
-      ctx.fillStyle = '#E6EDF7'
+      ctx.fillStyle = '#2D1B3A'
       ctx.beginPath()
       ctx.arc(center, center, 4, 0, Math.PI * 2)
       ctx.fill()
 
       // score text
-      ctx.fillStyle = '#7C8DB0'
+      ctx.fillStyle = '#9B8CB5'
       ctx.font = '10px JetBrains Mono'
       ctx.textAlign = 'center'
       ctx.fillText(`${score.toFixed(2)}`, center, center + radius + 16)
@@ -141,10 +142,11 @@ export function RadarGauge({ score, confidence, side, engineState }: Props) {
             fontFamily: 'var(--font-mono)',
             fontSize: 10,
             color: 'var(--muted)',
-            background: 'var(--surface-2)',
-            padding: '4px 8px',
+            background: 'rgba(255,255,255,0.9)',
+            padding: '6px 12px',
             borderRadius: 999,
-            border: '1px solid var(--border)'
+            border: '1px solid var(--border-soft)',
+            boxShadow: '0 2px 8px rgba(167,139,250,0.1)'
           }}
         >
           {engineState} • {confidence}%
