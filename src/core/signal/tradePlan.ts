@@ -275,10 +275,18 @@ export class TradePlanGenerator {
         ? entry * (1 - 1 / leverage + mmr)
         : entry * (1 + 1 / leverage - mmr)
 
-    // Kelly sizing
-    const winRate = performance?.trades
-      ? performance.wins / performance.trades
-      : 0.5
+    // Kelly sizing - use real winRate from tracker, conservative cold start
+    let winRate: number
+    if (performance?.trades && performance.trades >= 5) {
+      winRate = performance.wins / performance.trades
+    } else if (performance?.trades) {
+      const raw = performance.wins / performance.trades
+      const prior = 0.42
+      const weight = Math.min(1, performance.trades / 20)
+      winRate = raw * weight + prior * (1 - weight)
+    } else {
+      winRate = 0.42 // cold start, not 0.5 aggressive
+    }
     const rr = plan.rr ?? 2.5
     const kelly = clamp(
       winRate - (1 - winRate) / Math.max(rr, 0.1),
