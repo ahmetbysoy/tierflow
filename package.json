@@ -1,8 +1,8 @@
 {
   "name": "tierflow",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Signal Radar - Neon Kokpit Radarı | CVD + OBI + Velocity",
+  "description": "Signal Radar - Neon Kokpit | CVD + OBI + Velocity + Microprice + VPIN | 5-weight micro-structure + forward PnL tracker",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
