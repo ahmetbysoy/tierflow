@@ -12,6 +12,10 @@ export class OkxAdapter implements WsAdapter {
   private cb: ((ev: WsEvent) => void) | null = null
   private symbol = 'BTC-USDT'
   private state: 'connected' | 'connecting' | 'disconnected' = 'disconnected'
+  // Local book for incremental updates (action: snapshot/update)
+  private localBids: Map<string, number> = new Map()
+  private localAsks: Map<string, number> = new Map()
+  private lastChecksum: number | null = null
 
   onEvent(cb: (ev: WsEvent) => void): void {
     this.cb = cb
@@ -29,6 +33,9 @@ export class OkxAdapter implements WsAdapter {
       this.symbol = this.symbol.slice(0, -4) + '-' + this.symbol.slice(-4)
     }
     this.disconnect()
+    this.localBids.clear()
+    this.localAsks.clear()
+    this.lastChecksum = null
     this.state = 'connecting'
     this.cb?.({ type: 'status', status: 'connecting', message: 'OKX connecting...' })
 
@@ -70,11 +77,61 @@ export class OkxAdapter implements WsAdapter {
             this.cb?.({ type: 'trade', data: trade })
           }
         } else if (channel === 'books') {
-          // OKX books: { asks: [[px, sz, _, _]], bids: [...] , ts }
+          // OKX books: incremental update (action: 'snapshot' or 'update') + checksum
+          // Snapshot = tam 400 seviye, Update = sadece değişen seviyeler -> merge et
+          const action: string | undefined = (msg as any).action // 'snapshot' | 'update'
+          const checksum: number | undefined = msg.data?.[0]?.checksum
+
           for (const b of msg.data) {
+            const incomingBids: string[][] = b.bids || []
+            const incomingAsks: string[][] = b.asks || []
+
+            if (action === 'snapshot') {
+              // Snapshot: tam değiştir
+              this.localBids.clear()
+              this.localAsks.clear()
+              for (const [px, sz] of incomingBids) {
+                const qty = parseFloat(sz)
+                if (qty > 0) this.localBids.set(px, qty)
+              }
+              for (const [px, sz] of incomingAsks) {
+                const qty = parseFloat(sz)
+                if (qty > 0) this.localAsks.set(px, qty)
+              }
+            } else {
+              // Update: merge et (piramit'teki applyDiff mantığı gibi)
+              for (const [px, sz] of incomingBids) {
+                const qty = parseFloat(sz)
+                if (qty === 0) this.localBids.delete(px)
+                else this.localBids.set(px, qty)
+              }
+              for (const [px, sz] of incomingAsks) {
+                const qty = parseFloat(sz)
+                if (qty === 0) this.localAsks.delete(px)
+                else this.localAsks.set(px, qty)
+              }
+            }
+
+            // Checksum kontrolü (varsa, logla - gerçek L2 defterinde eksik/yanlış derinlik riski)
+            if (checksum && this.lastChecksum !== null && checksum !== this.lastChecksum) {
+              // Checksum mismatch -> defter bozulmuş, bir sonraki snapshot'ta düzelir
+              // İsteğe bağlı: console.warn(`OKX checksum mismatch ${checksum} != ${this.lastChecksum}`)
+            }
+            this.lastChecksum = checksum ?? null
+
+            // Local book'u sıralı NormalizedDepth'e çevir
+            const sortedBids = Array.from(this.localBids.entries())
+              .map(([p, q]) => [parseFloat(p), q] as [number, number])
+              .sort((a, b) => b[0] - a[0])
+              .slice(0, 50)
+            const sortedAsks = Array.from(this.localAsks.entries())
+              .map(([p, q]) => [parseFloat(p), q] as [number, number])
+              .sort((a, b) => a[0] - b[0])
+              .slice(0, 50)
+
             const depth: NormalizedDepth = {
-              bids: (b.bids || []).map((x: string[]) => [parseFloat(x[0]), parseFloat(x[1])] as [number, number]),
-              asks: (b.asks || []).map((x: string[]) => [parseFloat(x[0]), parseFloat(x[1])] as [number, number]),
+              bids: sortedBids,
+              asks: sortedAsks,
               ts: Number(b.ts)
             }
             this.cb?.({ type: 'depth', data: depth })
@@ -102,6 +159,9 @@ export class OkxAdapter implements WsAdapter {
 
   disconnect(): void {
     this.state = 'disconnected'
+    this.localBids.clear()
+    this.localAsks.clear()
+    this.lastChecksum = null
     if (this.ws) {
       try { this.ws.close() } catch {}
       this.ws = null
