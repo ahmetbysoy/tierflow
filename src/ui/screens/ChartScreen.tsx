@@ -135,6 +135,48 @@ export function ChartScreen() {
       <div ref={containerRef} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--surface)' }} />
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--amber)', letterSpacing: 0.5 }}>FLOW PRESSURE (−100..+100) • 5s bucket • sarı = absorpsiyon</div>
       <div ref={flowRef} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--surface)' }} />
+      {/* Footprint - Volume at Price */}
+      {flowCandles.length > 0 && (() => {
+        const last = flowCandles[flowCandles.length - 1]
+        const profile = last.volumeProfile || []
+        const topLevels = [...profile].sort((a,b)=> b.total - a.total).slice(0, 8)
+        const maxTotal = Math.max(...profile.map(p=>p.total), 1)
+        return (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 12 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--cyan)', letterSpacing: 0.5, marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+              <span>FOOTPRINT • {new Date(last.ts).toLocaleTimeString()} • POC {last.pocPrice.toFixed(2)}</span>
+              <span style={{ color: last.absorption ? 'var(--amber)' : 'var(--muted)' }}>{last.absorption ? '● ABSORPSİYON' : `${profile.length} seviye`}</span>
+            </div>
+            {last.absorptionLevels.length > 0 && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--amber)', background: 'rgba(251,191,36,0.1)', padding: '6px 8px', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(251,191,36,0.2)' }}>
+                ⚡ Absorption Wall: {last.absorptionLevels.map(l=> `${l.price.toFixed(2)} (${(l.sellVol/l.buyVol).toFixed(1)}x sell)`).join(' | ')}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {topLevels.map((vp) => {
+                const isAbsorption = last.absorptionLevels.some(a=> Math.abs(a.price - vp.price) < 0.01)
+                const deltaSign = vp.delta > 0 ? '+' : ''
+                return (
+                  <div key={vp.price} style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+                    <span style={{ width: 65, color: 'var(--text)', fontWeight: 600 }}>${vp.price.toFixed(2)}</span>
+                    <div style={{ flex: 1, display: 'flex', height: 14, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden', border: isAbsorption ? '1px solid var(--amber)' : '1px solid transparent' }}>
+                      <div style={{ width: `${(vp.buyVol/maxTotal)*50}%`, background: 'var(--green)', opacity: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4, color: '#fff', fontSize: 8 }}>{vp.buyVol>0 ? `${(vp.buyVol/1000).toFixed(1)}k` : ''}</div>
+                      <div style={{ width: `${(vp.sellVol/maxTotal)*50}%`, background: 'var(--red)', opacity: 0.8, display: 'flex', alignItems: 'center', paddingLeft: 4, color: '#fff', fontSize: 8 }}>{vp.sellVol>0 ? `${(vp.sellVol/1000).toFixed(1)}k` : ''}</div>
+                    </div>
+                    <span style={{ width: 55, color: vp.delta>0 ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>{deltaSign}{vp.delta.toFixed(0)}</span>
+                    <span style={{ width: 30, color: 'var(--muted)' }}>{vp.total>0 ? `${((vp.buyVol/vp.total)*100).toFixed(0)}%` : ''}</span>
+                    {isAbsorption && <span style={{ color: 'var(--amber)', fontWeight: 700 }}>●</span>}
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--muted)', marginTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Yeşil alım, Kırmızı satım, Sarı absorpsiyon wall (3x)</span>
+              <span>POC en yüksek hacimli fiyat</span>
+            </div>
+          </div>
+        )
+      })()}
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)' }}>
         Mumlar yerel 15s toplama ile oluşturuluyor. Sinyaller ▲/▼ marker olarak işaretlenir. Alt panel CVD histogramı (yeşil/kırmızı). Flow paneli delta pressure (yeşil alım, kırmızı satım, sarı absorpsiyon).
       </div>

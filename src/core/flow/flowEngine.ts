@@ -21,6 +21,17 @@ export interface FlowBucket {
   activity: number
   liquidations: number
   absorption: boolean
+  volumeAtPrice: Map<string, { price: number; buyVol: number; sellVol: number }>
+}
+
+export interface VolumeAtPrice {
+  price: number
+  buyVol: number
+  sellVol: number
+  delta: number
+  total: number
+  buyNotional: number
+  sellNotional: number
 }
 
 export interface FlowCandle {
@@ -40,6 +51,9 @@ export interface FlowCandle {
   priceClose: number
   liquidations: number
   absorption: boolean
+  volumeProfile: VolumeAtPrice[]
+  pocPrice: number
+  absorptionLevels: VolumeAtPrice[]
 }
 
 export interface FlowEngineConfig {
@@ -60,6 +74,29 @@ export interface FlowTrade {
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v))
+}
+
+function getTickSize(price: number): number {
+  if (price >= 10000) return 0.1
+  if (price >= 1000) return 0.1
+  if (price >= 100) return 0.01
+  if (price >= 10) return 0.01
+  if (price >= 1) return 0.001
+  if (price >= 0.1) return 0.0001
+  if (price >= 0.01) return 0.00001
+  if (price >= 0.001) return 0.000001
+  return 0.0000001
+}
+
+function bucketPrice(price: number): number {
+  const tick = getTickSize(price)
+  return Math.round(price / tick) * tick
+}
+
+function priceToKey(price: number): string {
+  const tick = getTickSize(price)
+  const decimals = Math.max(0, -Math.log10(tick))
+  return price.toFixed(decimals)
 }
 
 // ── FlowEngine ────────────────────────────────────────────
@@ -122,6 +159,19 @@ export class FlowEngine {
       this.bucket.activity += trade.notional
       this.bucket.high = Math.max(this.bucket.high, trade.price)
       this.bucket.low = Math.min(this.bucket.low, trade.price)
+      // Volume at Price (footprint) - tick bucketed
+      const key = priceToKey(bucketPrice(trade.price))
+      const existing = this.bucket.volumeAtPrice.get(key)
+      if (existing) {
+        if (trade.side === 'buy') existing.buyVol += trade.notional
+        else existing.sellVol += trade.notional
+      } else {
+        this.bucket.volumeAtPrice.set(key, {
+          price: bucketPrice(trade.price),
+          buyVol: trade.side === 'buy' ? trade.notional : 0,
+          sellVol: trade.side === 'sell' ? trade.notional : 0
+        })
+      }
     }
   }
 
@@ -152,7 +202,8 @@ export class FlowEngine {
       sell: 0,
       activity: 0,
       liquidations: 0,
-      absorption: false
+      absorption: false,
+      volumeAtPrice: new Map()
     }
   }
 
@@ -175,6 +226,37 @@ export class FlowEngine {
     const absorption = priceChange < 0.0008 && b.activity > avgActivity * 2
     b.absorption = absorption
 
+    // Volume Profile (footprint) - her fiyat seviyesinde delta
+    const volumeProfile: VolumeAtPrice[] = Array.from(b.volumeAtPrice.entries()).map(([key, v]) => {
+      const buyNotional = v.buyVol
+      const sellNotional = v.sellVol
+      return {
+        price: v.price,
+        buyVol: v.buyVol,
+        sellVol: v.sellVol,
+        delta: v.buyVol - v.sellVol,
+        total: v.buyVol + v.sellVol,
+        buyNotional,
+        sellNotional
+      }
+    }).sort((a, b) => b.price - a.price)
+
+    // POC (Point of Control) - en yüksek hacimli fiyat
+    let pocPrice = b.openPrice
+    let maxTotal = 0
+    for (const vp of volumeProfile) {
+      if (vp.total > maxTotal) {
+        maxTotal = vp.total
+        pocPrice = vp.price
+      }
+    }
+
+    // Delta Absorption seviyeleri: bir tarafta 3x hacim ama fiyat kırılmıyor
+    const absorptionLevels: VolumeAtPrice[] = volumeProfile.filter(vp => {
+      const ratio = vp.sellVol > 0 && vp.buyVol > 0 ? Math.max(vp.sellVol / vp.buyVol, vp.buyVol / vp.sellVol) : 0
+      return ratio >= 3 && vp.total > avgActivity * 0.3
+    })
+
     const candle: FlowCandle = {
       ts: b.startTs,
       pressureOpen: this.candles.length
@@ -193,7 +275,10 @@ export class FlowEngine {
       priceLow: b.low,
       priceClose: b.closePrice,
       liquidations: b.liquidations,
-      absorption
+      absorption,
+      volumeProfile,
+      pocPrice,
+      absorptionLevels
     }
 
     this.candles.push(candle)
