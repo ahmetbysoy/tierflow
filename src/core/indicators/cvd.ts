@@ -50,16 +50,48 @@ export function calcCVDNorm(trades: NormalizedTrade[], windowS = 60, now = Date.
 }
 
 /**
- * CVD_z = (CVD_norm - EMA(CVD_norm,20)) / std(CVD_norm,20)
+ * CVD_z = (CVD_norm - EMA(CVD_norm,period)) / std(CVD_norm,period)
  * cvdNormHistory: son N CVD_norm değerleri
+ * period: EMA ve std penceresi (default 20, multi-timeframe için 60 da kullanılabilir)
  */
-export function calcCVDZ(cvdNormHistory: number[]): number {
+export function calcCVDZ(cvdNormHistory: number[], period = 20): number {
   if (cvdNormHistory.length < 5) return 0
-  const window = cvdNormHistory.slice(-20)
-  const emaVal = emaFromWindow(window, 20)
+  const window = cvdNormHistory.slice(-period)
+  const emaVal = emaFromWindow(window, period)
   const s = std(window)
   const last = window[window.length - 1]
   return (last - emaVal) / s
+}
+
+/**
+ * Multi-timeframe CVD_z confluence
+ * Kısa (20) ve uzun (60) CVD_z aynı yönde ve |z|>0.5 ise bonus verir.
+ * Score'a eklenmek üzere {z20, z60, confluence, combined} döner.
+ */
+export function calcCVDZMulti(cvdNormHistory: number[]): { z20: number; z60: number; confluence: number; combined: number } {
+  const z20 = calcCVDZ(cvdNormHistory, 20)
+  const z60 = cvdNormHistory.length >= 30 ? calcCVDZ(cvdNormHistory, 60) : z20
+  const confluence = (Math.sign(z20) === Math.sign(z60) && Math.abs(z20) > 0.5 && Math.abs(z60) > 0.5) ? 0.25 * Math.sign(z20) : 0
+  const combined = z20 * 0.7 + z60 * 0.3 + confluence
+  return { z20, z60, confluence, combined }
+}
+
+function adaptiveThreshold(cvdHistory: number[], priceHistory: { price: number }[]): number {
+  // CVD volatilitesine göre ATR-benzeri eşik
+  const cvdSlice = cvdHistory.slice(-20)
+  const cvdStd = std(cvdSlice)
+  const cvdThresh = Math.max(0.015, Math.min(0.035, cvdStd * 0.8))
+  // Fiyat volatilitesine göre ek düzeltme
+  if (priceHistory.length >= 10) {
+    const prices = priceHistory.slice(-20).map(p => p.price)
+    const mid = prices.reduce((a,b)=>a+b,0)/prices.length
+    const priceStd = std(prices)
+    const priceAtrPct = mid ? (priceStd / mid) : 0
+    const priceThresh = Math.max(0.015, Math.min(0.035, priceAtrPct * 8))
+    // İkisinin ortalaması, en az 0.015
+    return Math.max(0.015, Math.min(0.04, (cvdThresh + priceThresh) / 2))
+  }
+  return cvdThresh
 }
 
 /**
@@ -91,11 +123,13 @@ export function detectDivergence(
   const cvdLast = recentCVD[recentCVD.length - 1]
   const cvdFirst = recentCVD[0]
 
+  const adaptThresh = adaptiveThreshold(recentCVD, recentPrices)
+
   const priceMakingHigherHigh = priceLast >= priceHigh - 1e-9 && priceLast > priceFirst
-  const cvdMakingLowerHigh = cvdLast < cvdHigh - 0.02 // CVD tepe yapamıyor
+  const cvdMakingLowerHigh = cvdLast < cvdHigh - adaptThresh // CVD tepe yapamıyor (ATR-normalize)
 
   const priceMakingLowerLow = priceLast <= priceLow + 1e-9 && priceLast < priceFirst
-  const cvdMakingHigherLow = cvdLast > cvdLow + 0.02
+  const cvdMakingHigherLow = cvdLast > cvdLow + adaptThresh
 
   if (priceMakingHigherHigh && cvdMakingLowerHigh) return -0.3 // bearish
   if (priceMakingLowerLow && cvdMakingHigherLow) return 0.3 // bullish

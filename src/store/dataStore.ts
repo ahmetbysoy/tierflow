@@ -8,15 +8,24 @@ import { applyFilters } from '../core/signal/filters'
 import { globalTracker } from '../core/performance/signalTracker'
 import { OrderBookDiff } from '../core/book/orderBookDiff'
 import { VPIN } from '../core/indicators/vpin'
+import { FlowEngine } from '../core/flow/flowEngine'
+import { DetectorSuite } from '../core/detectors/detectorSuite'
+import { TradePlanGenerator } from '../core/signal/tradePlan'
+import { PaperTradingEngine } from '../core/paper/paperTrading'
 import type { NormalizedTrade, NormalizedDepth, Candle, Signal, Metrics } from '../types'
 import type { Tracker } from '../core/performance/signalTracker'
+import type { FlowCandle } from '../core/flow/flowEngine'
+import type { MicroSignal, TradePlan } from '../core/signal/tradePlan'
 
 interface DataState {
   price: number
   metrics: Metrics
   engineState: 'IDLE' | 'ARMED' | 'FIRED' | 'COOLDOWN'
   signals: Signal[]
+  detectorSignals: MicroSignal[]
   candles: Candle[]
+  flowCandles: FlowCandle[]
+  plan: TradePlan | null
   cvd: number
   lastUpdate: number
   trackers: Tracker[]
@@ -43,16 +52,30 @@ let lastThrottle = 0
 let currentCandle: Candle | null = null
 const candles: Candle[] = []
 
-// OrderBook and VPIN instances
+// OrderBook, VPIN, FlowEngine, DetectorSuite, TradePlan and PaperTrading instances (module-level singletons)
 const orderBook = new OrderBookDiff({ maxLevels: 50, heatmapWindowSec: 30 })
 const vpin = new VPIN({ maxBuckets: 50, tradeLookback: 200, minBucketNotional: 100000 })
+const flowEngine = new FlowEngine({ mode: 'time', timeframeMs: 5000, volumeTarget: 1_000_000, maxCandles: 80 })
+const detectorSuite = new DetectorSuite()
+const tradePlanGenerator = new TradePlanGenerator({ minRR: 2.5, kellyFraction: 0.35, balance: 1000, riskPct: 2, maxLeverage: 20, feeRateBps: 4, minConfidence: 60 })
+const paperTradingEngine = new PaperTradingEngine({ cooldownMs: 30000, maxPositions: 3, maxClosedHistory: 500, maxEquityLength: 300 })
+let spreadValue = 0
 
-function getSettings() {
+function getSettings(): { weights: { w1:number; w2:number; w3:number; w4:number; w5:number }; threshold:number; cooldown:number; paperTradingEnabled:boolean } {
   try {
     const raw = localStorage.getItem('signal-radar-settings')
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const state = parsed.state ?? parsed
+      return {
+        weights: state.weights ?? { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 },
+        threshold: state.threshold ?? 0.75,
+        cooldown: state.cooldown ?? 18,
+        paperTradingEnabled: state.paperTradingEnabled ?? false
+      }
+    }
   } catch {}
-  return { weights: { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 }, threshold: 0.75, cooldown: 18 }
+  return { weights: { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 }, threshold: 0.75, cooldown: 18, paperTradingEnabled: false }
 }
 
 function updateCandle(price: number, ts: number) {
@@ -94,7 +117,10 @@ export const useDataStore = create<DataState>((set, get) => ({
   metrics: { cvd: 0, cvdNorm: 0, cvdZ: 0, obi: 0, obiRaw: 0, velocity: 0, velocityZ: 0, microprice: 0, microDev: 0, vpin: 0, vpinLabel: 'Low', score: 0, price: 0 },
   engineState: 'IDLE',
   signals: [],
+  detectorSignals: [],
   candles: [],
+  flowCandles: [],
+  plan: null,
   cvd: 0,
   lastUpdate: 0,
   trackers: [],
@@ -111,12 +137,15 @@ export const useDataStore = create<DataState>((set, get) => ({
     vpinValue = vpinState.value
     vpinLabel = vpinState.label
 
+    // FlowEngine bucket update (every trade)
+    flowEngine.updateBucket({ price: t.price, notional, side: t.side, ts: t.ts })
+
     if (now - lastThrottle < 100) {
       tradeBuffer.push(t)
       priceHistory.push({ price: t.price, ts: t.ts })
       if (priceHistory.length > 500) priceHistory.shift()
       updateCandle(t.price, t.ts)
-      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price: t.price, lastUpdate: t.ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price: t.price } })
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price: t.price, lastUpdate: t.ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price: t.price }, flowCandles: flowEngine.getCandles() })
       return
     }
     lastThrottle = now
@@ -188,6 +217,7 @@ export const useDataStore = create<DataState>((set, get) => ({
       engineState: res.state,
       lastUpdate: t.ts,
       candles: allCandles,
+      flowCandles: flowEngine.getCandles(),
       cvd: cvdNorm,
       trackers: globalTracker.getAll(),
       stats: globalTracker.getStats()
@@ -197,12 +227,37 @@ export const useDataStore = create<DataState>((set, get) => ({
       globalTracker.addSignal(res.signal)
       set((s) => {
         const next = [res.signal!, ...s.signals].slice(0, 200)
-        return { signals: next, trackers: globalTracker.getAll(), stats: globalTracker.getStats() }
+        return { signals: next, trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() }
       })
       window.dispatchEvent(new CustomEvent('signal-fired', { detail: res.signal }))
     } else {
-      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats() })
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() })
     }
+
+    // TradePlanGenerator: every handleTrade, generate plan
+    try {
+      const perf: any = globalTracker.getStats()
+      const trades = perf.count ?? 0
+      const wins = Math.round((perf.count ?? 0) * (perf.win60s ?? 0.5))
+      const walls = detectorSuite.getWalls()
+      const wallEntries = {
+        bid: walls.bid.map((w: any) => ({ price: w.price, qty: w.qty, notional: w.notional, persistence: w.persistence })),
+        ask: walls.ask.map((w: any) => ({ price: w.price, qty: w.qty, notional: w.notional, persistence: w.persistence }))
+      }
+      const plan = tradePlanGenerator.generateTradePlan(t.price, spreadValue, wallEntries as any, { trades, wins })
+      set({ plan } as any)
+      // Paper trading only if enabled (default off) — canlı akışı gerçek trade sanma
+      const settingsPaper = getSettings()
+      if (settingsPaper.paperTradingEnabled) {
+        const positionSize = tradePlanGenerator.getPositionSize()
+        if (plan && positionSize) {
+          const book = orderBook.getBook()
+          const bookDepth = [...book.bids.slice(0, 10), ...book.asks.slice(0, 10)].reduce((a: number, b: any) => a + (b.qty || 0), 0) || 100
+          paperTradingEngine.simulateFromPlan(plan, positionSize, bookDepth, t.price)
+        }
+        paperTradingEngine.update(t.price)
+      }
+    } catch {}
   },
 
   handleDepth: (d) => {
@@ -210,15 +265,17 @@ export const useDataStore = create<DataState>((set, get) => ({
     obiValue = updateOBI(obiValue, raw, 0.2)
 
     // OrderBook microprice
+    let micro: any = null
     try {
       orderBook.applyDiff({ bids: d.bids, asks: d.asks, eventTime: d.ts })
-      const micro = orderBook.recompute()
-      if (micro) {
-        microPrice = micro.microprice
-        // microDev computed via orderBook micro
-        const mid = micro.mid
-        const spread = micro.spread
-        microDev = spread > 0 ? (micro.microprice - mid) / (spread / 2) : 0
+      const m = orderBook.recompute()
+      if (m) {
+        microPrice = m.microprice
+        micro = m
+        const mid = m.mid
+        const spread = m.spread
+        spreadValue = spread
+        microDev = spread > 0 ? (m.microprice - mid) / (spread / 2) : 0
       }
     } catch {}
     // Fallback direct calc if orderBook not ready
@@ -226,7 +283,26 @@ export const useDataStore = create<DataState>((set, get) => ({
       const { microprice, microDev: md } = computeMicroDev(d)
       microPrice = microprice
       microDev = md
+      const spread = d.asks[0][0] - d.bids[0][0]
+      spreadValue = spread
+      micro = { obi: obiValue, bestBid: d.bids[0][0], bestAsk: d.asks[0][0], spread, mid: (d.bids[0][0] + d.asks[0][0]) / 2 }
+    } else if (micro) {
+      spreadValue = micro.spread
     }
+
+    // DetectorSuite update (after recompute)
+    try {
+      detectorSuite.setData({
+        book: orderBook.getBook(),
+        micro: micro ? { obi: micro.obi ?? obiValue, bestBid: micro.bestBid, bestAsk: micro.bestAsk, spread: micro.spread, mid: micro.mid } : null,
+        lastPrice: priceHistory[priceHistory.length - 1]?.price ?? d.bids[0]?.[0] ?? 0,
+        vpinValue,
+        flowCandles: flowEngine.getCandles(),
+        cvdHistory: cvdNormHistory.map(v => ({ ts: Date.now(), value: v })),
+        trades: tradeBuffer.toArray().map(t => ({ price: t.price, notional: t.price * t.qty, side: t.side }))
+      })
+      detectorSuite.run()
+    } catch {}
 
     const now = Date.now()
     if (now - lastThrottle < 100) return
@@ -234,7 +310,8 @@ export const useDataStore = create<DataState>((set, get) => ({
     set({
       metrics: { ...s.metrics, obi: obiValue, obiRaw: raw, microprice: microPrice, microDev, vpin: vpinValue, vpinLabel },
       trackers: globalTracker.getAll(),
-      stats: globalTracker.getStats()
+      stats: globalTracker.getStats(),
+      flowCandles: flowEngine.getCandles()
     })
   },
 
@@ -245,7 +322,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     updateCandle(price, ts)
     const now = Date.now()
     if (now - lastThrottle < 100) {
-      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price, lastUpdate: ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price } })
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), price, lastUpdate: ts, metrics: { ...get().metrics, vpin: vpinValue, vpinLabel, price }, flowCandles: flowEngine.getCandles() })
       return
     }
     lastThrottle = now
@@ -301,17 +378,25 @@ export const useDataStore = create<DataState>((set, get) => ({
       engineState: res.state,
       lastUpdate: ts,
       candles: allCandles,
+      flowCandles: flowEngine.getCandles(),
       trackers: globalTracker.getAll(),
       stats: globalTracker.getStats()
     })
 
     if (res.signal) {
       globalTracker.addSignal(res.signal)
-      set((s) => ({ signals: [res.signal!, ...s.signals].slice(0, 200), trackers: globalTracker.getAll(), stats: globalTracker.getStats() }))
+      set((s) => ({ signals: [res.signal!, ...s.signals].slice(0, 200), trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() }))
       window.dispatchEvent(new CustomEvent('signal-fired', { detail: res.signal }))
     } else {
-      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats() })
+      set({ trackers: globalTracker.getAll(), stats: globalTracker.getStats(), flowCandles: flowEngine.getCandles() })
     }
+    // Paper trading update on mark price (only if enabled)
+    try {
+      const sPaper = getSettings()
+      if (sPaper.paperTradingEnabled) {
+        paperTradingEngine.update(price)
+      }
+    } catch {}
   },
 
   reset: () => {
@@ -325,8 +410,13 @@ export const useDataStore = create<DataState>((set, get) => ({
     microDev = 0
     vpinValue = 0
     vpinLabel = 'Low'
+    spreadValue = 0
     orderBook.reset()
     vpin.reset()
+    flowEngine.reset()
+    detectorSuite.reset()
+    tradePlanGenerator.reset()
+    paperTradingEngine.reset()
     engine.reset()
     globalTracker.clear()
     candles.length = 0
@@ -336,7 +426,10 @@ export const useDataStore = create<DataState>((set, get) => ({
       metrics: { cvd: 0, cvdNorm: 0, cvdZ: 0, obi: 0, obiRaw: 0, velocity: 0, velocityZ: 0, microprice: 0, microDev: 0, vpin: 0, vpinLabel: 'Low', score: 0, price: 0 },
       engineState: 'IDLE',
       signals: [],
+      detectorSignals: [],
       candles: [],
+      flowCandles: [],
+      plan: null,
       cvd: 0,
       lastUpdate: 0,
       trackers: [],
@@ -344,6 +437,44 @@ export const useDataStore = create<DataState>((set, get) => ({
     })
   }
 }))
+
+// DetectorSuite -> separate detectorSignals list (karıştırma) + TradePlanGenerator feed
+detectorSuite.on('signal:add', (sig: any) => {
+  try {
+    const microSignal: MicroSignal = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${sig.type}`,
+      type: sig.type,
+      bias: sig.bias,
+      confidence: sig.confidence,
+      description: sig.description,
+      price: sig.price,
+      evidence: sig.evidence || {},
+      ts: Date.now(),
+      decay: 1,
+      expiresAt: Date.now() + 60000
+    }
+    useDataStore.setState((state: any) => ({
+      detectorSignals: [microSignal, ...state.detectorSignals].slice(0, 200)
+    }))
+  } catch {}
+  try {
+    tradePlanGenerator.addSignal(sig)
+  } catch {}
+})
+
+// 250ms interval for FlowEngine tick (reconnect/tab visibility'ye dokunma)
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    const lastPrice = priceHistory[priceHistory.length - 1]?.price ?? 0
+    if (lastPrice) {
+      flowEngine.tick(lastPrice)
+      // Update store flowCandles without touching other state
+      try {
+        useDataStore.setState({ flowCandles: flowEngine.getCandles() } as any)
+      } catch {}
+    }
+  }, 250)
+}
 
 // Expose engine for tests
 export const _internal = {
@@ -361,8 +492,14 @@ export const _internal = {
   set vpinValue(v) { vpinValue = v },
   get vpinLabel() { return vpinLabel },
   set vpinLabel(v) { vpinLabel = v },
+  get spreadValue() { return spreadValue },
+  set spreadValue(v) { spreadValue = v },
   orderBook,
   vpin,
+  flowEngine,
+  detectorSuite,
+  tradePlanGenerator,
+  paperTradingEngine,
   engine,
   tracker: globalTracker,
   resetInternal() {
@@ -376,8 +513,13 @@ export const _internal = {
     microDev = 0
     vpinValue = 0
     vpinLabel = 'Low'
+    spreadValue = 0
     orderBook.reset()
     vpin.reset()
+    flowEngine.reset()
+    detectorSuite.reset()
+    tradePlanGenerator.reset()
+    paperTradingEngine.reset()
     engine.reset()
     globalTracker.clear()
     candles.length = 0

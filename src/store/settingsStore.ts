@@ -10,6 +10,7 @@ interface SettingsState {
   cooldown: number // seconds
   sound: boolean
   haptics: boolean
+  paperTradingEnabled: boolean
   setSource: (s: Source) => void
   setSymbol: (sym: string) => void
   setWeights: (w: { w1: number; w2: number; w3: number; w4: number; w5: number }) => void
@@ -17,6 +18,7 @@ interface SettingsState {
   setCooldown: (v: number) => void
   setSound: (v: boolean) => void
   setHaptics: (v: boolean) => void
+  setPaperTradingEnabled: (v: boolean) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -29,6 +31,7 @@ export const useSettingsStore = create<SettingsState>()(
       cooldown: 18,
       sound: true,
       haptics: true,
+      paperTradingEnabled: false,
       setSource: (source) => set({ source }),
       setSymbol: (symbol) => set({ symbol }),
       setWeights: (weights) => {
@@ -41,28 +44,35 @@ export const useSettingsStore = create<SettingsState>()(
       setThreshold: (threshold) => set({ threshold }),
       setCooldown: (cooldown) => set({ cooldown }),
       setSound: (sound) => set({ sound }),
-      setHaptics: (haptics) => set({ haptics })
+      setHaptics: (haptics) => set({ haptics }),
+      setPaperTradingEnabled: (paperTradingEnabled) => set({ paperTradingEnabled })
     }),
     {
       name: 'signal-radar-settings',
-      version: 4,
+      version: 5,
       migrate: (persistedState: any, version: number) => {
         if (version < 4) {
           // v4: 5-weight microprice+VPIN
           const oldW = persistedState.weights || { w1: 0.5, w2: 0.3, w3: 0.2 }
-          // Map old 3-weight to new 5-weight: keep CVD/OBI/VEL ratio, add micro 0.18, vpin 0.12
           const sum3 = (oldW.w1||0.5)+(oldW.w2||0.3)+(oldW.w3||0.2)
           return {
             ...persistedState,
             weights: { 
-              w1: (oldW.w1/sum3)*0.70, // 70% for old 3
+              w1: (oldW.w1/sum3)*0.70,
               w2: (oldW.w2/sum3)*0.70,
               w3: (oldW.w3/sum3)*0.70,
               w4: 0.18,
               w5: 0.12
             },
             threshold: 0.75,
-            cooldown: 18
+            cooldown: 18,
+            paperTradingEnabled: false
+          }
+        }
+        if (version < 5) {
+          return {
+            ...persistedState,
+            paperTradingEnabled: false
           }
         }
         return persistedState as any
