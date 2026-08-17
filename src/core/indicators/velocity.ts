@@ -40,10 +40,11 @@ export function calcVelocity(
 export function calcVelocityZ(velocityHistory: number[]): number {
   if (velocityHistory.length < 5) return 0
   const window = velocityHistory.slice(-30)
-  const meanWindow = window.slice(0, -1)
-  if (meanWindow.length < 3) return 0
-  const emaVal = ema(meanWindow, 2 / (30 + 1))
-  const s = std(window)
+  if (window.length < 5) return 0
+  const hist = window.slice(0, -1)
+  if (hist.length < 3) return 0
+  const emaVal = ema(hist, 2 / (30 + 1))
+  const s = std(hist)
   const last = window[window.length - 1]
   return (last - emaVal) / s
 }
