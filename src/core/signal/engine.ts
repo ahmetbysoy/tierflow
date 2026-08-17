@@ -8,12 +8,13 @@ export interface Weights {
   w3: number
   w4?: number
   w5?: number
+  w6?: number
 }
 
 export function normalizeWeights(w: Weights): Weights {
-  const sum = (w.w1||0)+(w.w2||0)+(w.w3||0)+(w.w4||0)+(w.w5||0)
-  if (sum === 0) return { w1: 0.35, w2: 0.20, w3: 0.15, w4: 0.18, w5: 0.12 } as Weights
-  return { w1: (w.w1||0)/sum, w2: (w.w2||0)/sum, w3: (w.w3||0)/sum, w4: (w.w4||0)/sum, w5: (w.w5||0)/sum } as Weights
+  const sum = (w.w1||0)+(w.w2||0)+(w.w3||0)+(w.w4||0)+(w.w5||0)+(w.w6||0)
+  if (sum === 0) return { w1: 0.30, w2: 0.18, w3: 0.13, w4: 0.16, w5: 0.10, w6: 0.13 } as Weights
+  return { w1: (w.w1||0)/sum, w2: (w.w2||0)/sum, w3: (w.w3||0)/sum, w4: (w.w4||0)/sum, w5: (w.w5||0)/sum, w6: (w.w6||0)/sum } as Weights
 }
 
 export function computeScore(
@@ -23,10 +24,11 @@ export function computeScore(
   weights: Weights,
   divergenceAdj = 0,
   microDev: number = 0,
-  vpinAdj: number = 0
+  vpinAdj: number = 0,
+  detectorScore: number = 0
 ): number {
   const w = normalizeWeights(weights)
-  const s = (w.w1||0) * cvdZ + (w.w2||0) * obi + (w.w3||0) * velocityZ + (w.w4||0) * microDev + (w.w5||0) * vpinAdj + divergenceAdj
+  const s = (w.w1||0) * cvdZ + (w.w2||0) * obi + (w.w3||0) * velocityZ + (w.w4||0) * microDev + (w.w5||0) * vpinAdj + (w.w6||0) * detectorScore + divergenceAdj
   return Math.max(-3, Math.min(3, s))
 }
 
@@ -64,7 +66,7 @@ export class SignalEngine {
   tick(params: {
     score: number
     price: number
-    breakdown: { cvd: number; obi: number; vel: number; micro?: number; vpin?: number }
+    breakdown: { cvd: number; obi: number; vel: number; micro?: number; vpin?: number; detector?: number }
     weights: Weights
     ts: number
   }): EngineTickResult {
@@ -138,7 +140,7 @@ export class SignalEngine {
           price,
           confidence: computeConfidence(score),
           score,
-          breakdown: { cvd: breakdown.cvd, obi: breakdown.obi, vel: breakdown.vel, micro: breakdown.micro, vpin: breakdown.vpin, w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: (weights as any).w4, w5: (weights as any).w5 },
+          breakdown: { cvd: breakdown.cvd, obi: breakdown.obi, vel: breakdown.vel, micro: breakdown.micro, vpin: breakdown.vpin, detector: (breakdown as any).detector, w1: weights.w1, w2: weights.w2, w3: weights.w3, w4: (weights as any).w4, w5: (weights as any).w5, w6: (weights as any).w6 },
           ts
         }
         this.lastFiredSide = side
