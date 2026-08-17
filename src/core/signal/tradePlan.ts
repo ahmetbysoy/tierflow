@@ -176,12 +176,17 @@ export class TradePlanGenerator {
     let direction: PlanDirection = 'NEUTRAL'
     let confidence = 0
 
-    if (score.bull > score.bear + 50 && score.bull > this.config.minConfidence) {
+    const bullCount = score.recent.filter(s => s.bias === 'bullish').length
+    const bearCount = score.recent.filter(s => s.bias === 'bearish').length
+    const bullAvg = bullCount ? score.bull / bullCount : 0
+    const bearAvg = bearCount ? score.bear / bearCount : 0
+    // Normalize: 10 zayıf (avg 10) 1 güçlü (avg 90) karşısında ezilmesin
+    if (score.bull > score.bear + 30 && bullAvg > bearAvg + 8 && score.bull > this.config.minConfidence) {
       direction = 'LONG'
-      confidence = clamp(50 + (score.bull - score.bear) / 5, 50, 95)
-    } else if (score.bear > score.bull + 50 && score.bear > this.config.minConfidence) {
+      confidence = clamp(50 + (bullAvg - bearAvg) * 1.2 + Math.min(10, bullCount), 50, 95)
+    } else if (score.bear > score.bull + 30 && bearAvg > bullAvg + 8 && score.bear > this.config.minConfidence) {
       direction = 'SHORT'
-      confidence = clamp(50 + (score.bear - score.bull) / 5, 50, 95)
+      confidence = clamp(50 + (bearAvg - bullAvg) * 1.2 + Math.min(10, bearCount), 50, 95)
     }
 
     if (direction === 'NEUTRAL') {
