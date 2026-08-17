@@ -98,32 +98,57 @@ export class CrossExchangePoller {
   }
 
   private async pollExchange(key: ExchangeId): Promise<void> {
-    const url = this.buildUrl(key)
-    const res = await fetch(url, { signal: AbortSignal.timeout(this.config.timeoutMs) })
-    const data = await res.json()
-    let bid = 0
-    let ask = 0
-
-    if (key === 'bybit' && data.result?.list?.[0]) {
-      bid = +data.result.list[0].bid1Price
-      ask = +data.result.list[0].ask1Price
-    } else if (key === 'okx' && data.data?.[0]) {
-      bid = +data.data[0].bidPx
-      ask = +data.data[0].askPx
-    } else if (key === 'mexc' && data.data) {
-      bid = +data.data.buyOne
-      ask = +data.data.sellOne
-    }
-
-    if (bid && ask) {
-      this.state[key] = {
-        bid,
-        ask,
-        mid: (bid + ask) / 2,
-        ts: Date.now(),
-        status: 'live'
+    // Önce Vercel proxy'yi dene (CORS bypass), olmazsa direkt fetch'e fallback
+    const proxyUrl = `/api/cross-exchange?exchange=${key}&symbol=${this.symbol}`
+    try {
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(this.config.timeoutMs) })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.bid && data.ask) {
+          this.state[key] = {
+            bid: +data.bid,
+            ask: +data.ask,
+            mid: ( +data.bid + +data.ask) / 2,
+            ts: Date.now(),
+            status: 'live'
+          }
+          return
+        }
       }
-    }
+    } catch {}
+    // Fallback: direkt borsa REST (bazı borsalar CORS verir, bazıları vermez)
+    try {
+      const url = this.buildUrl(key)
+      if (!url) return
+      const res = await fetch(url, { signal: AbortSignal.timeout(this.config.timeoutMs) })
+      const data = await res.json()
+      let bid = 0
+      let ask = 0
+
+      if (key === 'bybit' && data.result?.list?.[0]) {
+        bid = +data.result.list[0].bid1Price
+        ask = +data.result.list[0].ask1Price
+      } else if (key === 'okx' && data.data?.[0]) {
+        bid = +data.data[0].bidPx
+        ask = +data.data[0].askPx
+      } else if (key === 'mexc' && data.data) {
+        bid = +data.data.buyOne
+        ask = +data.data.sellOne
+      }
+
+      if (bid && ask) {
+        this.state[key] = {
+          bid,
+          ask,
+          mid: (bid + ask) / 2,
+          ts: Date.now(),
+          status: 'live'
+        }
+        return
+      }
+    } catch {}
+    // Her iki yol da başarısız ise error
+    this.state[key].status = 'error'
   }
 
   private buildUrl(key: ExchangeId): string {
